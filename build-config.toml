@@ -1,0 +1,49 @@
+[general]
+libraries = ["libogg"]
+platforms = ["ios-sim", "ios", "macos", "android"]
+keep_intermediate = true
+repo_prefix = "https://gitlab.xiph.org/xiph/"
+
+[paths]
+build_dir = "build"
+repo_path = ["repos"]
+
+[build]
+make_concurrent_jobs = 8
+cflags = "-Oz -ffast-math"
+ldflags = "-flto -fPIE"
+
+[platforms.macos]
+min_version = "10.13"
+archs = ["arm64", "x86_64"]
+lib_type = "static"
+
+[platforms.ios]
+min_version = "11.0"
+archs = ["arm64"]
+lib_type = "static"
+
+[platforms.ios-sim]
+min_version = "11.0"
+archs = ["arm64", "x86_64"]
+lib_type = "static"
+
+[platforms.android]
+native_api_level = 21
+ndk_path = "/usr/local/NDK-r28c"
+archs = ["arm64-v8a", "armeabi-v7a", "x86_64", "x86"]
+lib_type = "shared"
+
+[libraries.libogg]
+version = "v1.3.5"
+cflags = "-O3"
+ldflags = "-flto"
+
+[libraries.libopus]
+version = "v1.5.2"
+
+[libraries.libopusenc]
+version = "v0.2.1"
+
+[libraries.libopusfile]
+version = "v0.12"
