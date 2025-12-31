@@ -102,7 +102,7 @@ pub enum Library {
     Libopus,
     Libopusenc,
     Libopusfile,
-    Libopusurl,
+    // Libopusurl,
 }
 impl std::fmt::Display for Library {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -117,23 +117,28 @@ impl Library {
             Library::Libopusenc => "libopusenc",
             Library::Libogg => "ogg",
             Library::Libopusfile => "opusfile",
-            Library::Libopusurl => "opusfile",
+            // Library::Libopusurl => "opusfile",
         }
     }
-    pub fn lib_name(&self) -> &'static str {
+    /// name without lib prefix
+    pub fn name_wo_lib_prefix(&self) -> &'static str {
         match self {
             Library::Libopus => "opus",
             Library::Libopusenc => "opusenc",
             Library::Libogg => "ogg",
             Library::Libopusfile => "opusfile",
-            Library::Libopusurl => "opusurl",
+            // Library::Libopusurl => "opusurl",
         }
     }
-
+    pub fn name_with_lib_prefix(&self) -> String {
+        format!("lib{}", self.name_wo_lib_prefix())
+    }
     pub fn include_dir(&self) -> PathBuf {
         match self {
             Library::Libogg => PathBuf::from("include").join("ogg"),
-            _ => PathBuf::from("include"),
+            Library::Libopus | Library::Libopusenc | Library::Libopusfile => {
+                PathBuf::from("include").join("opus")
+            }
         }
     }
 }
@@ -185,6 +190,21 @@ pub enum LibType {
     Shared,
 }
 
+impl LibType {
+    pub fn android_harmony_ext(&self) -> &'static str {
+        match self {
+            LibType::Static => "a",
+            LibType::Shared => "so",
+        }
+    }
+    pub fn darwin_ext(&self) -> &'static str {
+        match self {
+            LibType::Static => "a",
+            LibType::Shared => "framework",
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug)]
 pub struct PlatformConfig {
     pub macos: DarwinConfig,
@@ -202,6 +222,15 @@ impl PlatformConfig {
             Platform::IosSim => &self.ios_sim.archs,
             Platform::Android => &self.android.archs,
             Platform::Harmony => &self.android.archs, // FIXME
+        }
+    }
+    pub fn get_lib_type_for_platform(&self, platform: &Platform) -> LibType {
+        match platform {
+            Platform::Macos => self.macos.lib_type,
+            Platform::Ios => self.ios.lib_type,
+            Platform::IosSim => self.ios_sim.lib_type,
+            Platform::Android => self.android.lib_type,
+            Platform::Harmony => self.android.lib_type, // FIXME
         }
     }
 }

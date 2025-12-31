@@ -57,7 +57,7 @@ impl AndroidBuilder {
 
     fn get_android_host(arch: &Arch) -> &str {
         match arch {
-            Arch::ArmeabiV7a => "arm-linux-androideabi",
+            Arch::ArmeabiV7a => "armv7-linux-androideabi",
             Arch::Arm64V8a => "aarch64-linux-android",
             Arch::X86 => "i686-linux-android",
             Arch::X86_64 => "x86_64-linux-android",
@@ -135,6 +135,40 @@ impl AndroidBuilder {
             if let Some(l) = &lib_opts.ldflags {
                 ldflags.push_str(&format!(" {}", l));
             }
+        }
+
+        match library {
+            Library::Libopusenc => {
+                let opus_prefix = config
+                    .paths
+                    .build_dir
+                    .join("android")
+                    .join(abi)
+                    .join("opus");
+                // 转换为绝对路径
+                let opus_lib = fs::canonicalize(opus_prefix.join("lib"))?;
+                ldflags.push_str(&format!(" -L{}", opus_lib.display()));
+                // 添加头文件路径到 CFLAGS
+                cflags.push_str(&format!(" -I{}", opus_prefix.join("include").display()));
+            }
+            Library::Libopusfile => {
+                let opus_prefix = config
+                    .paths
+                    .build_dir
+                    .join("android")
+                    .join(abi)
+                    .join("opus");
+                let ogg_prefix = config.paths.build_dir.join("android").join(abi).join("ogg");
+                // 转换为绝对路径
+                let opus_lib = fs::canonicalize(opus_prefix.join("lib"))?;
+                let ogg_lib = fs::canonicalize(ogg_prefix.join("lib"))?;
+                ldflags.push_str(&format!(" -L{}", opus_lib.display()));
+                ldflags.push_str(&format!(" -L{}", ogg_lib.display()));
+                // 添加头文件路径到 CFLAGS
+                cflags.push_str(&format!(" -I{}", opus_prefix.join("include").display()));
+                cflags.push_str(&format!(" -I{}", ogg_prefix.join("include").display()));
+            }
+            _ => {}
         }
 
         // 创建构建环境变量（可复用）
@@ -215,7 +249,7 @@ impl AndroidBuilder {
             .status()
             .await?;
         if !status.success() {
-            anyhow::bail!("configure failed for {} on {}", library, abi);
+            anyhow::bail!("configure failed for {} on Android {}", library, abi);
         }
 
         let status = Command::new("make")
@@ -225,7 +259,7 @@ impl AndroidBuilder {
             .status()
             .await?;
         if !status.success() {
-            anyhow::bail!("make failed for {} on {}", library, abi);
+            anyhow::bail!("make failed for {} on Android {}", library, abi);
         }
 
         let status = Command::new("make")
@@ -235,7 +269,7 @@ impl AndroidBuilder {
             .status()
             .await?;
         if !status.success() {
-            anyhow::bail!("make install failed for {} on {}", library, abi);
+            anyhow::bail!("make install failed for {} on Android {}", library, abi);
         }
 
         // 构建完成后立即移动库文件到 build/lib
@@ -268,17 +302,12 @@ fn move_android_package(
     arch: &Arch,
     lib_type: LibType,
 ) -> Result<()> {
-    let lib_name = library.lib_name();
+    let lib_name = library.name_with_lib_prefix();
     let repo_name = library.repo_name();
     let version = version.trim_start_matches('v');
 
-    // 确定库文件扩展名
-    let lib_ext = match lib_type {
-        LibType::Static => "a",
-        LibType::Shared => "so",
-    };
-
     let abi = AndroidBuilder::get_android_abi(arch);
+    let file_name = format!("{}.{}", lib_name, lib_type.android_harmony_ext());
 
     // 源文件路径
     let source_lib = build_dir
@@ -286,7 +315,7 @@ fn move_android_package(
         .join(abi)
         .join(repo_name)
         .join("lib")
-        .join(format!("lib{}.{}", lib_name, lib_ext));
+        .join(&file_name);
 
     // 目标目录
     let dest_dir = build_dir
@@ -298,7 +327,7 @@ fn move_android_package(
     fs::create_dir_all(&dest_dir)?;
 
     // 目标文件路径
-    let dest_lib = dest_dir.join(format!("lib{}.{}", lib_name, lib_ext));
+    let dest_lib = dest_dir.join(&file_name);
 
     if source_lib.exists() {
         log::info!(

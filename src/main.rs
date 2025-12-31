@@ -18,7 +18,7 @@ async fn main() -> anyhow::Result<()> {
     }
     env_logger::init();
 
-    let config_path = PathBuf::from("build-config.toml");
+    let config_path = PathBuf::from("build_config.toml");
     let mut config = config::load_or_create_config(&config_path)?;
 
     // Sort libraries to build them in the correct order of dependency
@@ -36,13 +36,16 @@ async fn main() -> anyhow::Result<()> {
 
     for platform in &config.general.platforms {
         let archs_for_platform = config.platforms.get_archs_for_platform(platform);
+        let lib_type_for_platform = config.platforms.get_lib_type_for_platform(platform);
 
         for library in &config.general.libraries {
             for arch in archs_for_platform {
                 let repo_name = library.repo_name();
                 if let Some(repo) = repo_map.get(repo_name) {
+                    log::info!("Building {} for {} ({})", library, platform, arch);
                     let builder = builder::Builder::new(*platform, *arch, *library, repo, &config);
                     builder.build().await?;
+                    log::info!("Built {} for {} ({}) succeeded!", library, platform, arch);
                 }
             }
 
@@ -50,10 +53,12 @@ async fn main() -> anyhow::Result<()> {
                 || *platform == Platform::Ios
                 || *platform == Platform::IosSim
             {
+                log::info!("Creating universal binary for {} for {}", library, platform);
                 crate::platforms::darwin::create_universal_binary(
                     &config.paths.build_dir,
                     *platform,
                     library,
+                    lib_type_for_platform,
                     archs_for_platform,
                 )
                 .await?;

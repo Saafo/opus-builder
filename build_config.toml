@@ -1,6 +1,8 @@
 [general]
+# libraries = ["libopus", "libogg", "libopusenc", "libopusfile"]
 libraries = ["libogg"]
-platforms = ["ios-sim", "ios", "macos", "android"]
+# platforms = ["ios-sim", "ios", "macos", "android"]
+platforms = ["ios-sim", "macos", "android"]
 keep_intermediate = true
 repo_prefix = "https://gitlab.xiph.org/xiph/"
 
@@ -31,7 +33,8 @@ lib_type = "static"
 [platforms.android]
 native_api_level = 21
 ndk_path = "/usr/local/NDK-r28c"
-archs = ["arm64-v8a", "armeabi-v7a", "x86_64", "x86"]
+# archs = ["arm64-v8a", "armeabi-v7a", "x86_64", "x86"]
+archs = ["arm64-v8a"]
 lib_type = "shared"
 
 [libraries.libogg]
@@ -41,9 +44,11 @@ ldflags = "-flto"
 
 [libraries.libopus]
 version = "v1.5.2"
+configure_flags = ["--enable-float-approx", "--disable-extra-programs", "--disable-doc"]
 
 [libraries.libopusenc]
 version = "v0.2.1"
 
 [libraries.libopusfile]
 version = "v0.12"
+configure_flags = ["--disable-http", "--disable-examples", "--disable-doc"]

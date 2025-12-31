@@ -1,4 +1,4 @@
-use crate::config::{Arch, Config, Library, Platform};
+use crate::config::{Arch, Config, LibType, Library, Platform};
 use crate::repo::Repo;
 use anyhow::Result;
 use std::fs;
@@ -87,16 +87,10 @@ impl DarwinBuilder {
                     .join(platform_name)
                     .join(arch_str)
                     .join("opus");
-                let ogg_prefix = config
-                    .paths
-                    .build_dir
-                    .join(platform_name)
-                    .join(arch_str)
-                    .join("ogg");
                 cppflags.push_str(&format!(" -I{}", opus_prefix.join("include").display()));
-                cppflags.push_str(&format!(" -I{}", ogg_prefix.join("include").display()));
-                ldflags.push_str(&format!(" -L{}", opus_prefix.join("lib").display()));
-                ldflags.push_str(&format!(" -L{}", ogg_prefix.join("lib").display()));
+                // 转换为绝对路径，因为 libtool 要求绝对路径
+                let opus_lib = fs::canonicalize(opus_prefix.join("lib"))?;
+                ldflags.push_str(&format!(" -L{}", opus_lib.display()));
             }
             Library::Libopusfile => {
                 let opus_prefix = config
@@ -113,8 +107,11 @@ impl DarwinBuilder {
                     .join("ogg");
                 cppflags.push_str(&format!(" -I{}", opus_prefix.join("include").display()));
                 cppflags.push_str(&format!(" -I{}", ogg_prefix.join("include").display()));
-                ldflags.push_str(&format!(" -L{}", opus_prefix.join("lib").display()));
-                ldflags.push_str(&format!(" -L{}", ogg_prefix.join("lib").display()));
+                // 转换为绝对路径，因为 libtool 要求绝对路径
+                let opus_lib = fs::canonicalize(opus_prefix.join("lib"))?;
+                let ogg_lib = fs::canonicalize(ogg_prefix.join("lib"))?;
+                ldflags.push_str(&format!(" -L{}", opus_lib.display()));
+                ldflags.push_str(&format!(" -L{}", ogg_lib.display()));
             }
             _ => {}
         }
@@ -255,6 +252,7 @@ pub async fn create_universal_binary(
     build_dir: &Path,
     platform: Platform,
     library: &Library,
+    lib_type: LibType,
     archs: &[Arch],
 ) -> Result<()> {
     let universal_dir = build_dir
@@ -263,7 +261,8 @@ pub async fn create_universal_binary(
         .join(library.repo_name());
     fs::create_dir_all(universal_dir.join("lib"))?;
 
-    let lib_name = library.lib_name();
+    let lib_name = library.name_with_lib_prefix();
+    let file_name = format!("{}.{}", lib_name, lib_type.darwin_ext());
     let lib_files: Vec<_> = archs
         .iter()
         .map(|arch| {
@@ -273,7 +272,7 @@ pub async fn create_universal_binary(
                 .join(arch_str)
                 .join(library.repo_name())
                 .join("lib")
-                .join(format!("lib{}.a", lib_name))
+                .join(&file_name)
         })
         .filter(|p| p.exists())
         .collect();
@@ -286,7 +285,7 @@ pub async fn create_universal_binary(
         return Ok(());
     }
 
-    let output_path = universal_dir.join("lib").join(format!("lib{}.a", lib_name));
+    let output_path = universal_dir.join("lib").join(&file_name);
 
     log::info!(
         "Creating universal binary for {} at {}",
@@ -339,13 +338,19 @@ pub async fn create_universal_binary(
     Ok(())
 }
 
-pub async fn create_xcframework(build_dir: &Path, library: &Library, version: &str) -> Result<()> {
+pub async fn create_xcframework(
+    build_dir: &Path,
+    library: &Library,
+    version: &str,
+    lib_type: LibType,
+) -> Result<()> {
     let repo_name = library.repo_name();
-    let lib_name = library.lib_name();
+    let lib_name = library.name_with_lib_prefix();
 
     let final_dir = build_dir.join("lib").join("darwin");
     fs::create_dir_all(&final_dir)?;
 
+    let file_name = format!("{}.{}", lib_name, lib_type.darwin_ext());
     let xcframework_name = format!(
         "{}-{}.xcframework",
         lib_name,
@@ -366,33 +371,21 @@ pub async fn create_xcframework(build_dir: &Path, library: &Library, version: &s
 
     if macos_universal_path.exists() {
         cmd.arg("-library");
-        cmd.arg(
-            macos_universal_path
-                .join("lib")
-                .join(format!("lib{}.a", library.lib_name())),
-        );
+        cmd.arg(macos_universal_path.join("lib").join(&file_name));
         cmd.arg("-headers");
         cmd.arg(macos_universal_path.join("include"));
     }
 
     if ios_universal_path.exists() {
         cmd.arg("-library");
-        cmd.arg(
-            ios_universal_path
-                .join("lib")
-                .join(format!("lib{}.a", library.lib_name())),
-        );
+        cmd.arg(ios_universal_path.join("lib").join(&file_name));
         cmd.arg("-headers");
         cmd.arg(ios_universal_path.join("include"));
     }
 
     if ios_sim_universal_path.exists() {
         cmd.arg("-library");
-        cmd.arg(
-            ios_sim_universal_path
-                .join("lib")
-                .join(format!("lib{}.a", library.lib_name())),
-        );
+        cmd.arg(ios_sim_universal_path.join("lib").join(&file_name));
         cmd.arg("-headers");
         cmd.arg(ios_sim_universal_path.join("include"));
     }
