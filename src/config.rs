@@ -257,6 +257,7 @@ pub struct GeneralConfig {
     pub libraries: Vec<Library>,
     pub keep_intermediate: bool,
     pub repo_prefix: String,
+    pub verbose: bool,
 }
 
 impl Default for GeneralConfig {
@@ -271,6 +272,7 @@ impl Default for GeneralConfig {
             ],
             keep_intermediate: false,
             repo_prefix: "https://gitlab.xiph.org/xiph/".to_string(),
+            verbose: false,
         }
     }
 }

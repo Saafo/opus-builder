@@ -2,8 +2,9 @@
 # libraries = ["libopus", "libogg", "libopusenc", "libopusfile"]
 libraries = ["libogg"]
 # platforms = ["ios-sim", "ios", "macos", "android"]
-platforms = ["ios-sim", "macos", "android"]
+platforms = ["ios-sim"]
 keep_intermediate = true
+verbose = false
 repo_prefix = "https://gitlab.xiph.org/xiph/"
 
 [paths]

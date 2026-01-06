@@ -8,6 +8,7 @@ mod config;
 mod platforms;
 mod post_build;
 mod repo;
+mod utils;
 
 use config::Platform;
 
@@ -28,8 +29,8 @@ async fn main() -> anyhow::Result<()> {
 
     let repos = repo::get_repos(&config)?;
     for repo in &repos {
-        repo.ensure().await?;
-        repo.clean().await?;
+        repo.ensure(config.general.verbose).await?;
+        repo.clean(config.general.verbose).await?;
     }
 
     let repo_map: HashMap<_, _> = repos.iter().map(|r| (r.name.as_str(), r)).collect();

@@ -1,4 +1,6 @@
 use crate::config::Config;
+use crate::utils::CommandVerboseExt;
+use anyhow::Context;
 use anyhow::Result;
 use glob::glob;
 use std::env;
@@ -15,7 +17,7 @@ pub struct Repo {
 }
 
 impl Repo {
-    pub async fn ensure(&self) -> Result<()> {
+    pub async fn ensure(&self, verbose: bool) -> Result<()> {
         if self.local_path.exists() {
             log::info!(
                 "Found repo '{}' at {}",
@@ -29,16 +31,13 @@ impl Repo {
                 self.url,
                 self.local_path.display()
             );
-            let status = Command::new("git")
+            Command::new("git")
                 .arg("clone")
                 .arg(&self.url)
                 .arg(&self.local_path)
-                .status()
-                .await?;
-
-            if !status.success() {
-                anyhow::bail!("Failed to clone repo '{}'", self.name);
-            }
+                .run_with_verbose(verbose)
+                .await
+                .context(format!("Failed to clone repo '{}'", self.name))?;
         }
 
         log::info!(
@@ -46,19 +45,16 @@ impl Repo {
             self.version,
             self.name
         );
-        let status = Command::new("git")
+        Command::new("git")
             .arg("checkout")
             .arg(&self.version)
             .current_dir(&self.local_path)
-            .status()
-            .await?;
-        if !status.success() {
-            anyhow::bail!(
+            .run_with_verbose(verbose)
+            .await
+            .context(format!(
                 "Failed to checkout version '{}' for repo '{}'",
-                self.version,
-                self.name
-            );
-        }
+                self.version, self.name
+            ))?;
 
         Ok(())
     }
@@ -105,31 +101,27 @@ impl Repo {
         Ok(())
     }
 
-    pub async fn clean(&self) -> Result<()> {
+    pub async fn clean(&self, verbose: bool) -> Result<()> {
         if self.name == "opus" {
             self.cache_opus_model_before_clean()?;
         }
 
         log::info!("Cleaning repo '{}'", self.name);
-        let status = Command::new("git")
+        Command::new("git")
             .arg("reset")
             .arg("--hard")
             .current_dir(&self.local_path)
-            .status()
-            .await?;
-        if !status.success() {
-            anyhow::bail!("git reset --hard failed for '{}'", self.name);
-        }
+            .run_with_verbose(verbose)
+            .await
+            .context(format!("Failed to clean repo '{}'", self.name))?;
 
-        let status = Command::new("git")
+        Command::new("git")
             .arg("clean")
             .arg("-fdx")
             .current_dir(&self.local_path)
-            .status()
-            .await?;
-        if !status.success() {
-            anyhow::bail!("git clean -fdx failed for '{}'", self.name);
-        }
+            .run_with_verbose(verbose)
+            .await
+            .context(format!("Failed to clean repo '{}'", self.name))?;
 
         if self.name == "opus" {
             self.restore_opus_model_after_clean()?;

@@ -1,6 +1,7 @@
 use crate::config::{Arch, Config, LibType, Library, Platform};
 use crate::repo::Repo;
-use anyhow::Result;
+use crate::utils::CommandVerboseExt;
+use anyhow::{Context, Result};
 use std::fs;
 use std::path::Path;
 use tokio::process::Command;
@@ -12,6 +13,7 @@ impl DarwinBuilder {
         Self
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn build_autotools(
         &self,
         platform_name: &str,
@@ -25,14 +27,14 @@ impl DarwinBuilder {
     ) -> Result<()> {
         let autogen_path = repo.local_path.join("autogen.sh");
         if autogen_path.exists() {
-            let status = Command::new("sh")
+            Command::new("sh")
                 .arg("./autogen.sh")
                 .current_dir(&repo.local_path)
-                .status()
-                .await?;
-            if !status.success() {
-                anyhow::bail!("autogen.sh failed for {}", library);
-            }
+                .run_with_verbose(config.general.verbose)
+                .await
+                .context(format!(
+                    "autogen.sh failed for {library} on {platform_name}/{arch_str}"
+                ))?;
         }
 
         let sdk_root_output = Command::new("xcrun")
@@ -79,6 +81,7 @@ impl DarwinBuilder {
             }
         }
 
+        // add lib dependencies to ldflags
         match library {
             Library::Libopusenc => {
                 let opus_prefix = config
@@ -132,8 +135,8 @@ impl DarwinBuilder {
         let _ = Command::new("make")
             .current_dir(&repo.local_path)
             .arg("clean")
-            .status()
-            .await?;
+            .output()
+            .await;
 
         let mut configure_cmd = Command::new("./configure");
         configure_cmd
@@ -154,28 +157,21 @@ impl DarwinBuilder {
             }
         }
 
-        let status = configure_cmd.status().await?;
-        if !status.success() {
-            anyhow::bail!("configure failed for {}", library);
-        }
+        configure_cmd
+            .run_with_verbose(config.general.verbose)
+            .await
+            .context(format!(
+                "configure failed for {library} on {platform_name}/{arch_str}"
+            ))?;
 
-        let status = Command::new("make")
+        Command::new("make")
             .current_dir(&repo.local_path)
             .arg(format!("-j{}", config.build.make_concurrent_jobs))
-            .status()
-            .await?;
-        if !status.success() {
-            anyhow::bail!("make failed for {}", library);
-        }
-
-        let status = Command::new("make")
-            .current_dir(&repo.local_path)
-            .arg("install")
-            .status()
-            .await?;
-        if !status.success() {
-            anyhow::bail!("make install failed for {}", library);
-        }
+            .run_with_verbose(config.general.verbose)
+            .await
+            .context(format!(
+                "make failed for {library} on {platform_name}/{arch_str}"
+            ))?;
 
         Ok(())
     }

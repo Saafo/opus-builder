@@ -1,6 +1,7 @@
 use crate::config::{Arch, Config, LibType, Library};
 use crate::repo::Repo;
-use anyhow::Result;
+use crate::utils::CommandVerboseExt;
+use anyhow::{Context, Result};
 use std::env;
 use std::fs;
 use std::path::Path;
@@ -187,15 +188,13 @@ impl AndroidBuilder {
         // 运行 autogen.sh（如果存在）
         let autogen_path = repo.local_path.join("autogen.sh");
         if autogen_path.exists() {
-            let status = Command::new("sh")
+            Command::new("sh")
                 .arg("./autogen.sh")
                 .current_dir(&repo.local_path)
                 .set_build_env(&env)
-                .status()
-                .await?;
-            if !status.success() {
-                anyhow::bail!("autogen.sh failed for {}", library);
-            }
+                .run_with_verbose(config.general.verbose)
+                .await
+                .context(format!("autogen.sh failed for {library} on Android {abi}"))?;
         }
 
         let prefix = config
@@ -214,8 +213,8 @@ impl AndroidBuilder {
         let _ = Command::new("make")
             .current_dir(&repo.local_path)
             .arg("clean")
-            .status()
-            .await?;
+            .output()
+            .await;
 
         let mut configure_cmd = Command::new("./configure");
         configure_cmd
@@ -242,35 +241,21 @@ impl AndroidBuilder {
             }
         }
 
-        let status = configure_cmd
+        configure_cmd
             .set_build_env(&env)
             .env("CXX", &cxx)
             .env("CXXFLAGS", &cflags)
-            .status()
-            .await?;
-        if !status.success() {
-            anyhow::bail!("configure failed for {} on Android {}", library, abi);
-        }
+            .run_with_verbose(config.general.verbose)
+            .await
+            .context(format!("configure failed for {library} on Android {abi}"))?;
 
-        let status = Command::new("make")
+        Command::new("make")
             .current_dir(&repo.local_path)
             .arg(format!("-j{}", config.build.make_concurrent_jobs))
             .set_build_env(&env)
-            .status()
-            .await?;
-        if !status.success() {
-            anyhow::bail!("make failed for {} on Android {}", library, abi);
-        }
-
-        let status = Command::new("make")
-            .current_dir(&repo.local_path)
-            .arg("install")
-            .set_build_env(&env)
-            .status()
-            .await?;
-        if !status.success() {
-            anyhow::bail!("make install failed for {} on Android {}", library, abi);
-        }
+            .run_with_verbose(config.general.verbose)
+            .await
+            .context(format!("make failed for {library} on Android {abi}"))?;
 
         // 构建完成后立即移动库文件到 build/lib
         let version = if let Some(lib_config) = config.libraries.get(library) {
