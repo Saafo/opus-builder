@@ -24,6 +24,7 @@ pub struct Builder<'a> {
     library: Library,
     repo: &'a Repo,
     config: &'a Config,
+    verbose: bool,
 }
 
 impl<'a> Builder<'a> {
@@ -33,6 +34,7 @@ impl<'a> Builder<'a> {
         library: Library,
         repo: &'a Repo,
         config: &'a Config,
+        verbose: bool,
     ) -> Self {
         Self {
             platform,
@@ -40,6 +42,7 @@ impl<'a> Builder<'a> {
             library,
             repo,
             config,
+            verbose,
         }
     }
 
@@ -121,7 +124,7 @@ impl<'a> Builder<'a> {
 
         run_autogen(
             &self.repo.local_path,
-            self.config.general.verbose,
+            self.verbose,
             toolchain,
             &cflags,
             &ldflags,
@@ -150,7 +153,7 @@ impl<'a> Builder<'a> {
         apply_common_env(&mut configure_cmd, toolchain, &cflags, &ldflags);
 
         configure_cmd
-            .run_with_verbose(self.config.general.verbose)
+            .run_with_verbose(self.verbose)
             .await
             .with_context(|| {
                 format!(
@@ -165,7 +168,7 @@ impl<'a> Builder<'a> {
             .arg(format!("-j{}", self.config.build.make_concurrent_jobs));
         apply_common_env(&mut make_cmd, toolchain, &cflags, &ldflags);
         make_cmd
-            .run_with_verbose(self.config.general.verbose)
+            .run_with_verbose(self.verbose)
             .await
             .with_context(|| {
                 format!(
@@ -180,7 +183,7 @@ impl<'a> Builder<'a> {
             .arg("install");
         apply_common_env(&mut install_cmd, toolchain, &cflags, &ldflags);
         install_cmd
-            .run_with_verbose(self.config.general.verbose)
+            .run_with_verbose(self.verbose)
             .await
             .with_context(|| {
                 format!(

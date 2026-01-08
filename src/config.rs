@@ -271,7 +271,6 @@ pub struct GeneralConfig {
     pub libraries: Vec<Library>,
     pub keep_intermediate: bool,
     pub repo_prefix: String,
-    pub verbose: bool,
 }
 
 impl Default for GeneralConfig {
@@ -286,16 +285,24 @@ impl Default for GeneralConfig {
             ],
             keep_intermediate: false,
             repo_prefix: "https://gitlab.xiph.org/xiph/".to_string(),
-            verbose: false,
         }
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Default)]
+#[derive(Serialize, Deserialize, Debug)]
 #[serde(default)]
 pub struct PathConfig {
     pub repo_path: Vec<PathBuf>,
     pub build_dir: PathBuf,
+}
+
+impl Default for PathConfig {
+    fn default() -> Self {
+        Self {
+            repo_path: vec![PathBuf::from("repos")],
+            build_dir: PathBuf::from("build"),
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug)]
