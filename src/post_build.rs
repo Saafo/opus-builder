@@ -2,9 +2,7 @@ use crate::config::{Config, Platform};
 use anyhow::Result;
 use std::fs;
 
-/// 从仓库路径复制头文件到 build/include（平台无关）
-/// 只复制一次，多平台的 headers 暂时是一致的
-pub fn copy_headers_from_repo(config: &Config) -> Result<()> {
+pub fn copy_headers_from_build_artifacts(config: &Config) -> Result<()> {
     for library in &config.general.libraries {
         let lib_name = library.name_with_lib_prefix();
         let repo_name = library.repo_name();
@@ -17,14 +15,16 @@ pub fn copy_headers_from_repo(config: &Config) -> Result<()> {
 
             match platform {
                 Platform::Android => {
-                    // Android: 从第一个 ABI 的构建产物中复制
                     if let Some(abi) = config.platforms.android.archs.first() {
-                        let abi_str = abi.to_string();
+                        let Ok(abi_str) = crate::platforms::android::build::arch_dir_name(*abi)
+                        else {
+                            continue;
+                        };
                         let path = config
                             .paths
                             .build_dir
                             .join(&platform_str)
-                            .join(&abi_str)
+                            .join(abi_str)
                             .join(repo_name)
                             .join(library.include_dir());
 
@@ -35,14 +35,17 @@ pub fn copy_headers_from_repo(config: &Config) -> Result<()> {
                     }
                 }
                 Platform::Macos | Platform::Ios | Platform::IosSim => {
-                    // Darwin: 从第一个架构的构建产物中复制
                     let archs = config.platforms.get_archs_for_platform(platform);
                     if let Some(arch) = archs.first() {
+                        let Ok(arch_dir) = crate::platforms::darwin::build::arch_dir_name(*arch)
+                        else {
+                            continue;
+                        };
                         let path = config
                             .paths
                             .build_dir
                             .join(&platform_str)
-                            .join(arch.to_string())
+                            .join(arch_dir)
                             .join(repo_name)
                             .join(library.include_dir());
 
@@ -53,8 +56,7 @@ pub fn copy_headers_from_repo(config: &Config) -> Result<()> {
                     }
                 }
                 Platform::Harmony => {
-                    // Harmony: 暂时跳过，逻辑与 Android 类似
-                    continue;
+                    todo!("similar to android")
                 }
             }
         }
@@ -69,7 +71,7 @@ pub fn copy_headers_from_repo(config: &Config) -> Result<()> {
                 include_dest.display()
             );
 
-            // 只复制 .h 文件
+            // copy header files only
             for entry in fs::read_dir(&include_source)? {
                 let entry = entry?;
                 let path = entry.path();
@@ -109,19 +111,10 @@ pub async fn create_xcframework_if_needed(config: &Config) -> Result<()> {
     }
 
     for library in &config.general.libraries {
-        // 获取库的版本信息，如果库配置中没有指定版本，则直接报错
-        let version = if let Some(lib_config) = config.libraries.get(library) {
-            if let Some(v) = &lib_config.version {
-                v
-            } else {
-                anyhow::bail!("Version not specified for library: {:?}", library);
-            }
-        } else {
-            anyhow::bail!("Library configuration not found for: {:?}", library);
-        };
+        let version = config.get_library_version(library)?;
 
         let lib_type = config.platforms.get_lib_type_for_platform(&Platform::Ios);
-        crate::platforms::darwin::create_xcframework(
+        crate::platforms::darwin::build::create_xcframework(
             &config.paths.build_dir,
             library,
             version,

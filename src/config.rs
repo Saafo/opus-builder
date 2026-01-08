@@ -1,3 +1,4 @@
+use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
@@ -92,6 +93,19 @@ impl Default for Config {
             platforms,
             libraries,
         }
+    }
+}
+
+impl Config {
+    pub fn get_library_version(&self, library: &Library) -> Result<&str> {
+        let lib_config = self
+            .libraries
+            .get(library)
+            .with_context(|| format!("Library configuration not found for: {library:?}"))?;
+        lib_config
+            .version
+            .as_deref()
+            .with_context(|| format!("Version not specified for library: {library:?}"))
     }
 }
 
@@ -200,7 +214,7 @@ impl LibType {
     pub fn darwin_ext(&self) -> &'static str {
         match self {
             LibType::Static => "a",
-            LibType::Shared => "framework",
+            LibType::Shared => "dylib",
         }
     }
 }
@@ -311,7 +325,7 @@ pub struct LibraryBuildOptions {
     pub configure_flags: Option<Vec<String>>,
 }
 
-pub fn load_or_create_config(path: &PathBuf) -> anyhow::Result<Config> {
+pub fn load_or_create_config(path: &PathBuf) -> Result<Config> {
     if path.exists() {
         log::info!("Loading config from {:?}", path);
         let config_str = fs::read_to_string(path)?;

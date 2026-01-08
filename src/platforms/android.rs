@@ -1,342 +1,150 @@
+use crate::builder::AutotoolsToolchain;
 use crate::config::{Arch, Config, LibType, Library};
-use crate::repo::Repo;
-use crate::utils::CommandVerboseExt;
 use anyhow::{Context, Result};
 use std::env;
 use std::fs;
 use std::path::Path;
-use tokio::process::Command;
 
-// 构建环境变量结构体
-struct BuildEnv<'a> {
-    cc: &'a str,
-    ar: &'a Path,
-    as_tool: &'a str,
-    ld: &'a Path,
-    nm: &'a Path,
-    ranlib: &'a Path,
-    strip: &'a Path,
-    cflags: &'a str,
-    ldflags: &'a str,
-}
+pub mod build {
+    use super::*;
 
-// 为 Command 添加 set_build_env 扩展方法
-trait CommandExt {
-    fn set_build_env(&mut self, env: &BuildEnv) -> &mut Self;
-}
-
-impl CommandExt for Command {
-    fn set_build_env(&mut self, env: &BuildEnv) -> &mut Self {
-        self.env("CC", env.cc)
-            .env("AR", env.ar)
-            .env("AS", env.as_tool)
-            .env("LD", env.ld)
-            .env("NM", env.nm)
-            .env("RANLIB", env.ranlib)
-            .env("STRIP", env.strip)
-            .env("CFLAGS", env.cflags)
-            .env("LDFLAGS", env.ldflags)
-    }
-}
-
-pub struct AndroidBuilder;
-
-impl AndroidBuilder {
-    pub fn new() -> Self {
-        Self
-    }
-
-    pub fn get_android_abi(arch: &Arch) -> &str {
+    pub fn arch_dir_name(arch: Arch) -> Result<&'static str> {
         match arch {
-            Arch::ArmeabiV7a => "armeabi-v7a",
-            Arch::Arm64V8a => "arm64-v8a",
-            Arch::X86 => "x86",
-            Arch::X86_64 => "x86_64",
-            _ => panic!("Unsupported architecture for Android: {:?}", arch),
+            Arch::ArmeabiV7a => Ok("armeabi-v7a"),
+            Arch::Arm64V8a => Ok("arm64-v8a"),
+            Arch::X86 => Ok("x86"),
+            Arch::X86_64 => Ok("x86_64"),
+            _ => anyhow::bail!("Unsupported architecture for Android: {:?}", arch),
         }
     }
 
-    fn get_android_host(arch: &Arch) -> &str {
+    fn host_triple(arch: Arch) -> Result<&'static str> {
         match arch {
-            Arch::ArmeabiV7a => "armv7-linux-androideabi",
-            Arch::Arm64V8a => "aarch64-linux-android",
-            Arch::X86 => "i686-linux-android",
-            Arch::X86_64 => "x86_64-linux-android",
-            _ => panic!("Unsupported architecture for Android: {:?}", arch),
+            Arch::ArmeabiV7a => Ok("armv7-linux-androideabi"),
+            Arch::Arm64V8a => Ok("aarch64-linux-android"),
+            Arch::X86 => Ok("i686-linux-android"),
+            Arch::X86_64 => Ok("x86_64-linux-android"),
+            _ => anyhow::bail!("Unsupported architecture for Android: {:?}", arch),
         }
     }
 
-    fn get_host_platform() -> &'static str {
+    fn host_platform() -> Result<&'static str> {
         if cfg!(target_os = "macos") {
-            "darwin-x86_64"
+            Ok("darwin-x86_64")
         } else if cfg!(target_os = "linux") {
-            "linux-x86_64"
+            Ok("linux-x86_64")
         } else {
-            panic!("Unsupported host OS for Android NDK: {}", env::consts::OS);
+            anyhow::bail!("Unsupported host OS for Android NDK: {}", env::consts::OS)
         }
     }
 
-    async fn build_autotools(
-        &self,
-        arch: &Arch,
-        library: &Library,
-        repo: &Repo,
-        config: &Config,
-    ) -> Result<()> {
+    pub fn prepare_toolchain(arch: Arch, config: &Config) -> Result<AutotoolsToolchain> {
         let android_config = &config.platforms.android;
 
-        let abi = Self::get_android_abi(arch);
-        let host = Self::get_android_host(arch);
-        let host_platform = Self::get_host_platform();
+        let arch_dir = arch_dir_name(arch)?.to_string();
+        let host = host_triple(arch)?.to_string();
+        let host_platform = host_platform()?;
 
-        // 设置工具链路径
         let toolchain_bin = android_config
             .ndk_path
             .join("toolchains/llvm/prebuilt")
             .join(host_platform)
             .join("bin");
 
-        // 使用 llvm 工具
-        let ar = toolchain_bin.join("llvm-ar");
-        let ranlib = toolchain_bin.join("llvm-ranlib");
-        let strip = toolchain_bin.join("llvm-strip");
-        let nm = toolchain_bin.join("llvm-nm");
-
-        // 使用 clang 作为编译器，添加 --target 参数
         let api_level = android_config.native_api_level;
         let cc_target = format!("{}{}", host, api_level);
-        let cc = format!(
-            "{} --target={}",
-            toolchain_bin.join("clang").display(),
-            cc_target
-        );
-        let cxx = format!(
-            "{} --target={}",
-            toolchain_bin.join("clang++").display(),
-            cc_target
-        );
 
-        // 使用 ld 而不是 ld.lld
-        let ld = toolchain_bin.join("ld");
+        let clang = toolchain_bin.join("clang");
+        let clangxx = toolchain_bin.join("clang++");
 
-        // CFLAGS 简化为 -Oz
-        let mut cflags = format!("-Oz {}", config.build.cflags);
+        let cc = format!("{} --target={}", clang.display(), cc_target);
+        let cxx = format!("{} --target={}", clangxx.display(), cc_target);
 
-        // LDFLAGS 包含依赖库路径（暂时为空，后续添加）
-        let mut ldflags = String::new();
-        if !config.build.ldflags.is_empty() {
-            ldflags.push_str(&config.build.ldflags);
-        }
+        let extra_env = vec![
+            (
+                "AR".to_string(),
+                toolchain_bin.join("llvm-ar").display().to_string(),
+            ),
+            ("AS".to_string(), cc.clone()),
+            (
+                "LD".to_string(),
+                toolchain_bin.join("ld").display().to_string(),
+            ),
+            (
+                "NM".to_string(),
+                toolchain_bin.join("llvm-nm").display().to_string(),
+            ),
+            (
+                "RANLIB".to_string(),
+                toolchain_bin.join("llvm-ranlib").display().to_string(),
+            ),
+            (
+                "STRIP".to_string(),
+                toolchain_bin.join("llvm-strip").display().to_string(),
+            ),
+        ];
 
-        // 添加库特定的编译标志
-        if let Some(lib_opts) = config.libraries.get(library) {
-            if let Some(c) = &lib_opts.cflags {
-                cflags.push_str(&format!(" {}", c));
-            }
-            if let Some(l) = &lib_opts.ldflags {
-                ldflags.push_str(&format!(" {}", l));
-            }
-        }
+        Ok(AutotoolsToolchain {
+            platform_dir: "android".to_string(),
+            arch_dir,
+            host,
+            cc,
+            cxx: Some(cxx),
+            extra_env,
+            base_cflags: config.build.cflags.clone(),
+            base_ldflags: config.build.ldflags.clone(),
+        })
+    }
 
-        match library {
-            Library::Libopusenc => {
-                let opus_prefix = config
-                    .paths
-                    .build_dir
-                    .join("android")
-                    .join(abi)
-                    .join("opus");
-                // 转换为绝对路径
-                let opus_lib = fs::canonicalize(opus_prefix.join("lib"))?;
-                ldflags.push_str(&format!(" -L{}", opus_lib.display()));
-                // 添加头文件路径到 CFLAGS
-                cflags.push_str(&format!(" -I{}", opus_prefix.join("include").display()));
-            }
-            Library::Libopusfile => {
-                let opus_prefix = config
-                    .paths
-                    .build_dir
-                    .join("android")
-                    .join(abi)
-                    .join("opus");
-                let ogg_prefix = config.paths.build_dir.join("android").join(abi).join("ogg");
-                // 转换为绝对路径
-                let opus_lib = fs::canonicalize(opus_prefix.join("lib"))?;
-                let ogg_lib = fs::canonicalize(ogg_prefix.join("lib"))?;
-                ldflags.push_str(&format!(" -L{}", opus_lib.display()));
-                ldflags.push_str(&format!(" -L{}", ogg_lib.display()));
-                // 添加头文件路径到 CFLAGS
-                cflags.push_str(&format!(" -I{}", opus_prefix.join("include").display()));
-                cflags.push_str(&format!(" -I{}", ogg_prefix.join("include").display()));
-            }
-            _ => {}
-        }
+    pub fn move_android_package(
+        build_dir: &Path,
+        library: &Library,
+        version: &str,
+        arch: Arch,
+        lib_type: LibType,
+    ) -> Result<()> {
+        let lib_name = library.name_with_lib_prefix();
+        let repo_name = library.repo_name();
+        let version = version.trim_start_matches('v');
 
-        // 创建构建环境变量（可复用）
-        let env = BuildEnv {
-            cc: &cc,
-            ar: &ar,
-            as_tool: &cc,
-            ld: &ld,
-            nm: &nm,
-            ranlib: &ranlib,
-            strip: &strip,
-            cflags: &cflags,
-            ldflags: &ldflags,
-        };
+        let arch_dir = arch_dir_name(arch)?;
+        let file_name = format!("{}.{}", lib_name, lib_type.android_harmony_ext());
 
-        // 运行 autogen.sh（如果存在）
-        let autogen_path = repo.local_path.join("autogen.sh");
-        if autogen_path.exists() {
-            Command::new("sh")
-                .arg("./autogen.sh")
-                .current_dir(&repo.local_path)
-                .set_build_env(&env)
-                .run_with_verbose(config.general.verbose)
-                .await
-                .context(format!("autogen.sh failed for {library} on Android {abi}"))?;
-        }
-
-        let prefix = config
-            .paths
-            .build_dir
+        let source_lib = build_dir
             .join("android")
-            .join(abi)
-            .join(library.repo_name());
+            .join(arch_dir)
+            .join(repo_name)
+            .join("lib")
+            .join(&file_name);
 
-        fs::create_dir_all(&prefix)?;
+        let dest_dir = build_dir
+            .join("lib")
+            .join("android")
+            .join(arch_dir)
+            .join(format!("{}-{}", lib_name, version));
 
-        // 转换为绝对路径，因为 configure 要求 --prefix 必须是绝对路径
-        let prefix = fs::canonicalize(&prefix)?;
+        fs::create_dir_all(&dest_dir)?;
+        let dest_lib = dest_dir.join(&file_name);
 
-        // 在 configure 之前执行 make clean，防止不同架构之间复用错误的中间产物
-        let _ = Command::new("make")
-            .current_dir(&repo.local_path)
-            .arg("clean")
-            .output()
-            .await;
-
-        let mut configure_cmd = Command::new("./configure");
-        configure_cmd
-            .current_dir(&repo.local_path)
-            .arg(format!("--host={}", host))
-            .arg(format!("--prefix={}", prefix.display()));
-
-        // 根据 lib_type 配置决定构建静态库还是动态库
-        match android_config.lib_type {
-            LibType::Static => {
-                configure_cmd.arg("--enable-static").arg("--disable-shared");
-            }
-            LibType::Shared => {
-                configure_cmd.arg("--disable-static").arg("--enable-shared");
-            }
-        }
-
-        // 库特定的配置选项（从 config 中读取）
-        if let Some(lib_opts) = config.libraries.get(library)
-            && let Some(flags) = &lib_opts.configure_flags
-        {
-            for flag in flags {
-                configure_cmd.arg(flag);
-            }
-        }
-
-        configure_cmd
-            .set_build_env(&env)
-            .env("CXX", &cxx)
-            .env("CXXFLAGS", &cflags)
-            .run_with_verbose(config.general.verbose)
-            .await
-            .context(format!("configure failed for {library} on Android {abi}"))?;
-
-        Command::new("make")
-            .current_dir(&repo.local_path)
-            .arg(format!("-j{}", config.build.make_concurrent_jobs))
-            .set_build_env(&env)
-            .run_with_verbose(config.general.verbose)
-            .await
-            .context(format!("make failed for {library} on Android {abi}"))?;
-
-        // 构建完成后立即移动库文件到 build/lib
-        let version = if let Some(lib_config) = config.libraries.get(library) {
-            if let Some(v) = &lib_config.version {
-                v
-            } else {
-                anyhow::bail!("Version not specified for library: {:?}", library);
-            }
+        if source_lib.exists() {
+            log::info!(
+                "Moving {} from {} to {}",
+                lib_name,
+                source_lib.display(),
+                dest_lib.display()
+            );
+            fs::copy(&source_lib, &dest_lib).with_context(|| {
+                format!(
+                    "Failed to copy {} from {} to {}",
+                    lib_name,
+                    source_lib.display(),
+                    dest_lib.display()
+                )
+            })?;
         } else {
-            anyhow::bail!("Library configuration not found for: {:?}", library);
-        };
-        move_android_package(
-            &config.paths.build_dir,
-            library,
-            version,
-            arch,
-            android_config.lib_type,
-        )?;
+            log::warn!("Library file not found: {}, skipping", source_lib.display());
+        }
 
         Ok(())
-    }
-}
-
-/// 移动单个架构的 Android 库文件到 build/lib
-fn move_android_package(
-    build_dir: &Path,
-    library: &Library,
-    version: &str,
-    arch: &Arch,
-    lib_type: LibType,
-) -> Result<()> {
-    let lib_name = library.name_with_lib_prefix();
-    let repo_name = library.repo_name();
-    let version = version.trim_start_matches('v');
-
-    let abi = AndroidBuilder::get_android_abi(arch);
-    let file_name = format!("{}.{}", lib_name, lib_type.android_harmony_ext());
-
-    // 源文件路径
-    let source_lib = build_dir
-        .join("android")
-        .join(abi)
-        .join(repo_name)
-        .join("lib")
-        .join(&file_name);
-
-    // 目标目录
-    let dest_dir = build_dir
-        .join("lib")
-        .join("android")
-        .join(abi)
-        .join(format!("{}-{}", lib_name, version));
-
-    fs::create_dir_all(&dest_dir)?;
-
-    // 目标文件路径
-    let dest_lib = dest_dir.join(&file_name);
-
-    if source_lib.exists() {
-        log::info!(
-            "Moving {} from {} to {}",
-            lib_name,
-            source_lib.display(),
-            dest_lib.display()
-        );
-        fs::copy(&source_lib, &dest_lib)?;
-    } else {
-        log::warn!("Library file not found: {}, skipping", source_lib.display());
-    }
-
-    Ok(())
-}
-
-impl AndroidBuilder {
-    pub async fn build(
-        &self,
-        arch: Arch,
-        library: &Library,
-        repo: &Repo,
-        config: &Config,
-    ) -> Result<()> {
-        self.build_autotools(&arch, library, repo, config).await
     }
 }

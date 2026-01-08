@@ -55,7 +55,7 @@ async fn main() -> anyhow::Result<()> {
                 || *platform == Platform::IosSim
             {
                 log::info!("Creating universal binary for {} for {}", library, platform);
-                crate::platforms::darwin::create_universal_binary(
+                crate::platforms::darwin::build::create_universal_binary(
                     &config.paths.build_dir,
                     *platform,
                     library,
@@ -70,8 +70,7 @@ async fn main() -> anyhow::Result<()> {
     // 如果构建了 Apple 平台，则创建 xcframework
     post_build::create_xcframework_if_needed(&config).await?;
 
-    // 统一复制头文件到 build/include（从仓库路径，平台无关）
-    post_build::copy_headers_from_repo(&config)?;
+    post_build::copy_headers_from_build_artifacts(&config)?;
 
     if !config.general.keep_intermediate {
         log::info!("Cleaning up intermediate build artifacts");
