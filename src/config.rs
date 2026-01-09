@@ -47,7 +47,7 @@ impl Default for Config {
                 version: Some("v1.3.5".to_string()),
                 cflags: None,
                 ldflags: None,
-                configure_flags: Some(vec!["--disable-doc".to_string()]),
+                configure_flags: None,
             },
         );
         libraries.insert(
@@ -69,7 +69,7 @@ impl Default for Config {
                 version: Some("v0.2.1".to_string()),
                 cflags: None,
                 ldflags: None,
-                configure_flags: Some(vec!["--disable-doc".to_string()]),
+                configure_flags: None,
             },
         );
         libraries.insert(
@@ -276,7 +276,12 @@ pub struct GeneralConfig {
 impl Default for GeneralConfig {
     fn default() -> Self {
         Self {
-            platforms: vec![Platform::Macos],
+            platforms: vec![
+                Platform::IosSim,
+                Platform::Ios,
+                Platform::Macos,
+                Platform::Android,
+            ],
             libraries: vec![
                 Library::Libogg,
                 Library::Libopus,
@@ -311,14 +316,16 @@ pub struct Build {
     pub make_concurrent_jobs: u32,
     pub cflags: String,
     pub ldflags: String,
+    pub configure_flags: Vec<String>,
 }
 
 impl Default for Build {
     fn default() -> Self {
         Self {
             make_concurrent_jobs: 8,
-            cflags: "-Oz -ffast-math".to_string(),
+            cflags: "-O3 -g -DNDEBUG -ffast-math".to_string(),
             ldflags: "-flto -fPIE".to_string(),
+            configure_flags: vec!["--with-pic".to_string()],
         }
     }
 }

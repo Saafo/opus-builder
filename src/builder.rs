@@ -258,6 +258,9 @@ fn append_dependency_search_paths(
 }
 
 fn append_configure_flags(config: &Config, library: &Library, cmd: &mut Command) {
+    for flag in &config.build.configure_flags {
+        cmd.arg(flag);
+    }
     if let Some(lib_opts) = config.libraries.get(library)
         && let Some(flags) = &lib_opts.configure_flags
     {
