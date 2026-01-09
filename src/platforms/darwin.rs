@@ -50,16 +50,14 @@ pub mod build {
         };
 
         let arch_dir = arch_dir_name(arch)?.to_string();
-        let host = match (arch, platform) {
-            (Arch::X86_64, Platform::Macos) => "x86_64-apple-darwin",
-            (Arch::X86_64, Platform::IosSim) => "x86_64-apple-ios",
-            (Arch::Arm64, Platform::Macos) => "arm64-apple-darwin",
-            (Arch::Arm64, Platform::Ios) | (Arch::Arm64, Platform::IosSim) => "aarch64-apple-ios",
-            _ => anyhow::bail!(
-                "{} architecture not supported for platform: {:?}",
-                arch_dir,
-                platform
-            ),
+
+        // Note: the host is only used for ./configure
+        // if we use *-apple-ios, configure won't support shared library
+        // so we use *-apple-darwin
+        let host = match arch {
+            Arch::Arm64 => "arm64-apple-darwin",
+            Arch::X86_64 => "x86_64-apple-darwin",
+            _ => anyhow::bail!("{} architecture not supported for Darwin", arch_dir),
         }
         .to_string();
 
@@ -88,13 +86,26 @@ pub mod build {
         }
         let cc = String::from_utf8(cc_output.stdout)?.trim().to_string();
 
+        let target = match (platform, arch) {
+            (Platform::Macos, Arch::Arm64) => "arm64-apple-macos",
+            (Platform::Macos, Arch::X86_64) => "x86_64-apple-macos",
+            (Platform::Ios, Arch::Arm64) => "arm64-apple-ios",
+            (Platform::IosSim, Arch::Arm64) => "arm64-apple-ios-simulator",
+            (Platform::IosSim, Arch::X86_64) => "x86_64-apple-ios-simulator",
+            _ => anyhow::bail!(
+                "{} architecture not supported for platform: {:?}",
+                arch_dir,
+                platform
+            ),
+        };
+
         let base_cflags = format!(
-            "-arch {} -isysroot {} {} {}",
-            arch_dir, sdk_root, min_ver_flag, config.build.cflags
+            "-target {target} -arch {arch_dir} -isysroot {sdk_root} {} {}",
+            min_ver_flag, config.build.cflags
         );
         let base_ldflags = format!(
-            "-arch {} -isysroot {} {} {}",
-            arch_dir, sdk_root, min_ver_flag, config.build.ldflags
+            "-arch {arch_dir} -isysroot {sdk_root} {} {}",
+            min_ver_flag, config.build.ldflags
         );
 
         Ok(AutotoolsToolchain {
