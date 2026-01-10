@@ -1,5 +1,5 @@
 use crate::config::{Arch, Config, LibType, Library, Platform};
-use crate::platforms::{android, darwin};
+use crate::platforms::{android, darwin, harmony};
 use crate::repo::Repo;
 use crate::utils::CommandVerboseExt;
 use anyhow::{Context, Result};
@@ -55,47 +55,48 @@ impl<'a> Builder<'a> {
             self.repo.local_path.display()
         );
 
-        match self.platform {
-            Platform::Android => self.build_android().await,
-            Platform::Macos | Platform::Ios | Platform::IosSim => self.build_darwin().await,
-            Platform::Harmony => anyhow::bail!("Harmony platform not implemented yet"),
+        let toolchain = match self.platform {
+            Platform::Android => android::build::prepare_toolchain(self.arch, self.config),
+            Platform::Harmony => harmony::build::prepare_toolchain(self.arch, self.config),
+            Platform::Macos | Platform::Ios | Platform::IosSim => {
+                darwin::build::prepare_toolchain(self.platform, self.arch, self.config).await
+            }
         }
-    }
-
-    async fn build_android(&self) -> Result<()> {
-        let toolchain = android::build::prepare_toolchain(self.arch, self.config)?;
-        let lib_type = self
-            .config
-            .platforms
-            .get_lib_type_for_platform(&Platform::Android);
-
-        self.run_autotools(&toolchain, lib_type).await?;
-
-        let version = self.config.get_library_version(&self.library)?;
-        android::build::move_android_package(
-            &self.config.paths.build_dir,
-            &self.library,
-            version,
-            self.arch,
-            lib_type,
-        )
-    }
-
-    async fn build_darwin(&self) -> Result<()> {
-        let toolchain = darwin::build::prepare_toolchain(self.platform, self.arch, self.config)
-            .await
-            .with_context(|| {
-                format!(
-                    "prepare toolchain failed for {} ({})",
-                    self.platform, self.arch
-                )
-            })?;
+        .with_context(|| {
+            format!(
+                "prepare toolchain failed for {} ({})",
+                self.platform, self.arch
+            )
+        })?;
         let lib_type = self
             .config
             .platforms
             .get_lib_type_for_platform(&self.platform);
+        self.run_autotools(&toolchain, lib_type).await?;
 
-        self.run_autotools(&toolchain, lib_type).await
+        match self.platform {
+            Platform::Android => {
+                android::build::move_android_package(
+                    &self.config.paths.build_dir,
+                    &self.library,
+                    self.config.get_library_version(&self.library)?,
+                    self.arch,
+                    lib_type,
+                )?;
+            }
+            Platform::Harmony => {
+                harmony::build::move_harmony_package(
+                    &self.config.paths.build_dir,
+                    &self.library,
+                    self.config.get_library_version(&self.library)?,
+                    self.arch,
+                    lib_type,
+                )?;
+            }
+            _ => {}
+        }
+
+        Ok(())
     }
 
     async fn run_autotools(&self, toolchain: &AutotoolsToolchain, lib_type: LibType) -> Result<()> {

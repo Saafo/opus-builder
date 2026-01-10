@@ -1,6 +1,7 @@
 use crate::config::{Config, Platform};
 use anyhow::Result;
 use std::fs;
+use std::path::PathBuf;
 
 pub fn copy_headers_from_build_artifacts(config: &Config) -> Result<()> {
     for library in &config.general.libraries {
@@ -13,51 +14,15 @@ pub fn copy_headers_from_build_artifacts(config: &Config) -> Result<()> {
         for platform in &config.general.platforms {
             let platform_str = platform.to_string().to_lowercase();
 
-            match platform {
-                Platform::Android => {
-                    if let Some(abi) = config.platforms.android.archs.first() {
-                        let Ok(abi_str) = crate::platforms::android::build::arch_dir_name(*abi)
-                        else {
-                            continue;
-                        };
-                        let path = config
-                            .paths
-                            .build_dir
-                            .join(&platform_str)
-                            .join(abi_str)
-                            .join(repo_name)
-                            .join(library.include_dir());
-
-                        if path.exists() {
-                            include_source = Some(path);
-                            break;
-                        }
-                    }
-                }
-                Platform::Macos | Platform::Ios | Platform::IosSim => {
-                    let archs = config.platforms.get_archs_for_platform(platform);
-                    if let Some(arch) = archs.first() {
-                        let Ok(arch_dir) = crate::platforms::darwin::build::arch_dir_name(*arch)
-                        else {
-                            continue;
-                        };
-                        let path = config
-                            .paths
-                            .build_dir
-                            .join(&platform_str)
-                            .join(arch_dir)
-                            .join(repo_name)
-                            .join(library.include_dir());
-
-                        if path.exists() {
-                            include_source = Some(path);
-                            break;
-                        }
-                    }
-                }
-                Platform::Harmony => {
-                    todo!("similar to android")
-                }
+            if let Some(path) = include_source_for_platform(
+                config,
+                *platform,
+                &platform_str,
+                repo_name,
+                &library.include_dir(),
+            ) {
+                include_source = Some(path);
+                break;
             }
         }
 
@@ -94,6 +59,53 @@ pub fn copy_headers_from_build_artifacts(config: &Config) -> Result<()> {
     }
 
     Ok(())
+}
+
+fn include_source_for_platform(
+    config: &Config,
+    platform: Platform,
+    platform_str: &str,
+    repo_name: &str,
+    include_dir: &std::path::Path,
+) -> Option<PathBuf> {
+    match platform {
+        Platform::Android | Platform::Harmony => {
+            let arch = config
+                .platforms
+                .get_archs_for_platform(&platform)
+                .first()
+                .copied()?;
+            let arch_dir = match platform {
+                Platform::Android => crate::platforms::android::build::arch_dir_name(arch).ok()?,
+                Platform::Harmony => crate::platforms::harmony::build::arch_dir_name(arch).ok()?,
+                _ => return None,
+            };
+            let path = config
+                .paths
+                .build_dir
+                .join(platform_str)
+                .join(arch_dir)
+                .join(repo_name)
+                .join(include_dir);
+            path.exists().then_some(path)
+        }
+        Platform::Macos | Platform::Ios | Platform::IosSim => {
+            let arch = config
+                .platforms
+                .get_archs_for_platform(&platform)
+                .first()
+                .copied()?;
+            let arch_dir = crate::platforms::darwin::build::arch_dir_name(arch).ok()?;
+            let path = config
+                .paths
+                .build_dir
+                .join(platform_str)
+                .join(arch_dir)
+                .join(repo_name)
+                .join(include_dir);
+            path.exists().then_some(path)
+        }
+    }
 }
 
 /// Create an xcframework if any Apple platform was built.

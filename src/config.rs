@@ -32,12 +32,8 @@ impl Default for Config {
                 archs: vec![Arch::Arm64, Arch::X86_64],
                 lib_type: LibType::Static,
             },
-            android: AndroidConfig {
-                native_api_level: 21,
-                ndk_path: PathBuf::from("/usr/local/NDK-r28c"),
-                archs: vec![Arch::Arm64V8a, Arch::ArmeabiV7a, Arch::X86_64, Arch::X86],
-                lib_type: LibType::Shared,
-            },
+            android: AndroidConfig::default(),
+            harmony: HarmonyConfig::default(),
         };
 
         let mut libraries = HashMap::new();
@@ -205,7 +201,7 @@ pub enum LibType {
 }
 
 impl LibType {
-    pub fn android_harmony_ext(&self) -> &'static str {
+    pub fn linux_ext(&self) -> &'static str {
         match self {
             LibType::Static => "a",
             LibType::Shared => "so",
@@ -226,6 +222,7 @@ pub struct PlatformConfig {
     #[serde(rename = "ios-sim")]
     pub ios_sim: DarwinConfig,
     pub android: AndroidConfig,
+    pub harmony: HarmonyConfig,
 }
 
 impl PlatformConfig {
@@ -235,7 +232,7 @@ impl PlatformConfig {
             Platform::Ios => &self.ios.archs,
             Platform::IosSim => &self.ios_sim.archs,
             Platform::Android => &self.android.archs,
-            Platform::Harmony => &self.android.archs, // FIXME
+            Platform::Harmony => &self.harmony.archs,
         }
     }
     pub fn get_lib_type_for_platform(&self, platform: &Platform) -> LibType {
@@ -244,7 +241,7 @@ impl PlatformConfig {
             Platform::Ios => self.ios.lib_type,
             Platform::IosSim => self.ios_sim.lib_type,
             Platform::Android => self.android.lib_type,
-            Platform::Harmony => self.android.lib_type, // FIXME
+            Platform::Harmony => self.harmony.lib_type,
         }
     }
 }
@@ -262,6 +259,34 @@ pub struct AndroidConfig {
     pub ndk_path: PathBuf,
     pub archs: Vec<Arch>,
     pub lib_type: LibType,
+}
+
+impl Default for AndroidConfig {
+    fn default() -> Self {
+        Self {
+            native_api_level: 21,
+            ndk_path: PathBuf::from("/usr/local/NDK-r28c"),
+            archs: vec![Arch::Arm64V8a, Arch::ArmeabiV7a, Arch::X86_64, Arch::X86],
+            lib_type: LibType::Shared,
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct HarmonyConfig {
+    pub ndk_path: PathBuf,
+    pub archs: Vec<Arch>,
+    pub lib_type: LibType,
+}
+
+impl Default for HarmonyConfig {
+    fn default() -> Self {
+        Self {
+            ndk_path: PathBuf::from("/usr/local/openharmony"),
+            archs: vec![Arch::ArmeabiV7a, Arch::Arm64V8a, Arch::X86_64],
+            lib_type: LibType::Shared,
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug)]

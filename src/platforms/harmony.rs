@@ -1,9 +1,8 @@
 use crate::builder::AutotoolsToolchain;
 use crate::config::{Arch, Config, LibType, Library};
 use anyhow::{Context, Result};
-use std::env;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 pub mod build {
     use super::*;
@@ -12,63 +11,81 @@ pub mod build {
         match arch {
             Arch::ArmeabiV7a => Ok("armeabi-v7a"),
             Arch::Arm64V8a => Ok("arm64-v8a"),
-            Arch::X86 => Ok("x86"),
             Arch::X86_64 => Ok("x86_64"),
-            _ => anyhow::bail!("Unsupported architecture for Android: {:?}", arch),
+            _ => anyhow::bail!("Unsupported architecture for Harmony: {:?}", arch),
         }
     }
 
-    fn host_triple(arch: Arch) -> Result<&'static str> {
+    fn clang_target(arch: Arch) -> Result<&'static str> {
         match arch {
-            Arch::ArmeabiV7a => Ok("armv7-linux-androideabi"),
-            Arch::Arm64V8a => Ok("aarch64-linux-android"),
-            Arch::X86 => Ok("i686-linux-android"),
-            Arch::X86_64 => Ok("x86_64-linux-android"),
-            _ => anyhow::bail!("Unsupported architecture for Android: {:?}", arch),
+            Arch::ArmeabiV7a => Ok("arm-linux-ohos"),
+            Arch::Arm64V8a => Ok("aarch64-linux-ohos"),
+            Arch::X86_64 => Ok("x86_64-linux-ohos"),
+            _ => anyhow::bail!("Unsupported architecture for Harmony: {:?}", arch),
         }
     }
 
-    fn host_platform() -> Result<&'static str> {
-        if cfg!(target_os = "macos") {
-            Ok("darwin-x86_64")
-        } else if cfg!(target_os = "linux") {
-            Ok("linux-x86_64")
-        } else {
-            anyhow::bail!("Unsupported host OS for Android NDK: {}", env::consts::OS)
+    fn configure_host(arch: Arch) -> Result<&'static str> {
+        match arch {
+            Arch::ArmeabiV7a => Ok("arm-linux"),
+            Arch::Arm64V8a => Ok("aarch64-linux"),
+            Arch::X86_64 => Ok("x86_64-linux"),
+            _ => anyhow::bail!("Unsupported architecture for Harmony: {:?}", arch),
         }
+    }
+
+    // Reference: https://github.com/ohos-rs/ohos-openssl/blob/main/scripts/armeabi-v7a.sh
+    fn arch_cflags(arch: Arch) -> Result<&'static str> {
+        match arch {
+            Arch::ArmeabiV7a => {
+                Ok("-D__MUSL__ -march=armv7-a -mfloat-abi=softfp -mtune=generic-armv7-a -mthumb")
+            }
+            Arch::Arm64V8a | Arch::X86_64 => Ok("-D__MUSL__"),
+            _ => anyhow::bail!("Unsupported architecture for Harmony: {:?}", arch),
+        }
+    }
+
+    fn toolchain_bin(ndk_path: &Path) -> Result<PathBuf> {
+        let bin = ndk_path.join("native/llvm/bin");
+        if !bin.exists() {
+            anyhow::bail!("Harmony toolchain bin not found: {}", bin.to_string_lossy());
+        }
+        Ok(bin)
+    }
+
+    fn sysroot(ndk_path: &Path) -> Result<PathBuf> {
+        let sysroot = ndk_path.join("native/sysroot");
+        if !sysroot.exists() {
+            anyhow::bail!("Harmony sysroot not found: {}", sysroot.to_string_lossy());
+        }
+        Ok(sysroot)
     }
 
     pub fn prepare_toolchain(arch: Arch, config: &Config) -> Result<AutotoolsToolchain> {
-        let android_config = &config.platforms.android;
+        let harmony_config = &config.platforms.harmony;
 
         let arch_dir = arch_dir_name(arch)?.to_string();
-        let host = host_triple(arch)?.to_string();
-        let host_platform = host_platform()?;
+        let host = configure_host(arch)?.to_string();
+        let target = clang_target(arch)?;
+        let arch_flags = arch_cflags(arch)?;
 
-        let toolchain_bin = android_config
-            .ndk_path
-            .join("toolchains/llvm/prebuilt")
-            .join(host_platform)
-            .join("bin");
-
-        let api_level = android_config.native_api_level;
-        let cc_target = format!("{}{}", host, api_level);
+        let toolchain_bin = toolchain_bin(&harmony_config.ndk_path)?;
+        let sysroot = sysroot(&harmony_config.ndk_path)?;
 
         let clang = toolchain_bin.join("clang");
         let clangxx = toolchain_bin.join("clang++");
 
-        let cc = format!("{} --target={}", clang.display(), cc_target);
-        let cxx = format!("{} --target={}", clangxx.display(), cc_target);
+        let cc = format!("{} --target={}", clang.display(), target);
+        let cxx = format!("{} --target={}", clangxx.display(), target);
 
         let extra_env = vec![
             (
                 "AR".to_string(),
                 toolchain_bin.join("llvm-ar").display().to_string(),
             ),
-            ("AS".to_string(), cc.clone()),
             (
                 "LD".to_string(),
-                toolchain_bin.join("ld").display().to_string(),
+                toolchain_bin.join("ld.lld").display().to_string(),
             ),
             (
                 "NM".to_string(),
@@ -84,19 +101,27 @@ pub mod build {
             ),
         ];
 
+        let base_cflags = format!(
+            "{} --sysroot={} {}",
+            config.build.cflags,
+            sysroot.display(),
+            arch_flags
+        );
+        let base_ldflags = format!("{} --sysroot={}", config.build.ldflags, sysroot.display());
+
         Ok(AutotoolsToolchain {
-            platform_dir: "android".to_string(),
+            platform_dir: "harmony".to_string(),
             arch_dir,
             host,
             cc,
             cxx: Some(cxx),
             extra_env,
-            base_cflags: config.build.cflags.clone(),
-            base_ldflags: config.build.ldflags.clone(),
+            base_cflags,
+            base_ldflags,
         })
     }
 
-    pub fn move_android_package(
+    pub fn move_harmony_package(
         build_dir: &Path,
         library: &Library,
         version: &str,
@@ -111,7 +136,7 @@ pub mod build {
         let file_name = format!("{}.{}", lib_name, lib_type.linux_ext());
 
         let source_lib = build_dir
-            .join("android")
+            .join("harmony")
             .join(arch_dir)
             .join(repo_name)
             .join("lib")
@@ -119,7 +144,7 @@ pub mod build {
 
         let dest_dir = build_dir
             .join("lib")
-            .join("android")
+            .join("harmony")
             .join(arch_dir)
             .join(format!("{}-{}", lib_name, version));
 
