@@ -148,7 +148,6 @@ pub fn get_repos(config: &Config) -> anyhow::Result<Vec<Repo>> {
         let name = lib.repo_name();
         let url = format!("{}{}.git", repo_prefix, name);
 
-        // 从每个库的配置中获取版本信息
         let version = if let Some(lib_config) = config.libraries.get(lib) {
             if let Some(v) = &lib_config.version {
                 v

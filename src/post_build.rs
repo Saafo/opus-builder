@@ -7,7 +7,7 @@ pub fn copy_headers_from_build_artifacts(config: &Config) -> Result<()> {
         let lib_name = library.name_with_lib_prefix();
         let repo_name = library.repo_name();
 
-        // 从第一个可用的平台的构建产物中复制 headers
+        // copy headers from first available platform since headers are same
         let mut include_source = None;
 
         for platform in &config.general.platforms {
@@ -96,9 +96,8 @@ pub fn copy_headers_from_build_artifacts(config: &Config) -> Result<()> {
     Ok(())
 }
 
-/// 如果构建了 Apple 平台，则创建 xcframework
+/// Create an xcframework if any Apple platform was built.
 pub async fn create_xcframework_if_needed(config: &Config) -> Result<()> {
-    // 检查是否构建了 Apple 平台
     let has_apple_platform = config
         .general
         .platforms
