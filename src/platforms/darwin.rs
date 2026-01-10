@@ -16,51 +16,69 @@ pub mod build {
         }
     }
 
-    pub async fn prepare_toolchain(
-        platform: Platform,
-        arch: Arch,
-        config: &Config,
-    ) -> Result<AutotoolsToolchain> {
-        let (platform_dir, sdk_name, min_ver_flag) = match platform {
-            Platform::Macos => (
-                "macos".to_string(),
-                "macosx",
-                format!(
-                    "-mmacosx-version-min={}",
-                    config.platforms.macos.min_version
-                ),
-            ),
-            Platform::Ios => (
-                "ios".to_string(),
-                "iphoneos",
-                format!(
-                    "-miphoneos-version-min={}",
-                    config.platforms.ios.min_version
-                ),
-            ),
-            Platform::IosSim => (
-                "ios-sim".to_string(),
-                "iphonesimulator",
-                format!(
-                    "-mios-simulator-version-min={}",
-                    config.platforms.ios_sim.min_version
-                ),
-            ),
+    fn platform_dir(platform: Platform) -> Result<&'static str> {
+        match platform {
+            Platform::Macos => Ok("macos"),
+            Platform::Ios => Ok("ios"),
+            Platform::IosSim => Ok("ios-sim"),
             _ => anyhow::bail!("Platform not supported for Darwin: {:?}", platform),
-        };
-
-        let arch_dir = arch_dir_name(arch)?.to_string();
-
-        // Note: the host is only used for ./configure
-        // if we use *-apple-ios, configure won't support shared library
-        // so we use *-apple-darwin
-        let host = match arch {
-            Arch::Arm64 => "arm64-apple-darwin",
-            Arch::X86_64 => "x86_64-apple-darwin",
-            _ => anyhow::bail!("{} architecture not supported for Darwin", arch_dir),
         }
-        .to_string();
+    }
 
+    fn sdk_name(platform: Platform) -> Result<&'static str> {
+        match platform {
+            Platform::Macos => Ok("macosx"),
+            Platform::Ios => Ok("iphoneos"),
+            Platform::IosSim => Ok("iphonesimulator"),
+            _ => anyhow::bail!("Platform not supported for Darwin: {:?}", platform),
+        }
+    }
+
+    fn min_ver_flag(platform: Platform, config: &Config) -> Result<String> {
+        match platform {
+            Platform::Macos => Ok(format!(
+                "-mmacosx-version-min={}",
+                config.platforms.macos.min_version
+            )),
+            Platform::Ios => Ok(format!(
+                "-miphoneos-version-min={}",
+                config.platforms.ios.min_version
+            )),
+            Platform::IosSim => Ok(format!(
+                "-mios-simulator-version-min={}",
+                config.platforms.ios_sim.min_version
+            )),
+            _ => anyhow::bail!("Platform not supported for Darwin: {:?}", platform),
+        }
+    }
+
+    /// Note: the host is only used for `./configure`.
+    /// If we use `*-apple-ios`, configure won't support shared library,
+    /// so we use `*-apple-darwin`
+    fn configure_host(arch: Arch) -> Result<&'static str> {
+        match arch {
+            Arch::Arm64 => Ok("arm64-apple-darwin"),
+            Arch::X86_64 => Ok("x86_64-apple-darwin"),
+            _ => anyhow::bail!("Architecture not supported for Darwin: {:?}", arch),
+        }
+    }
+
+    fn target(platform: Platform, arch: Arch) -> Result<&'static str> {
+        match (platform, arch) {
+            (Platform::Macos, Arch::Arm64) => Ok("arm64-apple-macos"),
+            (Platform::Macos, Arch::X86_64) => Ok("x86_64-apple-macos"),
+            (Platform::Ios, Arch::Arm64) => Ok("arm64-apple-ios"),
+            (Platform::IosSim, Arch::Arm64) => Ok("arm64-apple-ios-simulator"),
+            (Platform::IosSim, Arch::X86_64) => Ok("x86_64-apple-ios-simulator"),
+            _ => anyhow::bail!(
+                "{} architecture not supported for platform: {:?}",
+                arch_dir_name(arch)?,
+                platform
+            ),
+        }
+    }
+
+    async fn xcrun_show_sdk_path(sdk_name: &str) -> Result<String> {
         let sdk_root_output = Command::new("xcrun")
             .arg("--sdk")
             .arg(sdk_name)
@@ -70,34 +88,41 @@ pub mod build {
         if !sdk_root_output.status.success() {
             anyhow::bail!("xcrun --show-sdk-path failed");
         }
-        let sdk_root = String::from_utf8(sdk_root_output.stdout)?
+        Ok(String::from_utf8(sdk_root_output.stdout)?
             .trim()
-            .to_string();
+            .to_string())
+    }
 
-        let cc_output = Command::new("xcrun")
+    async fn xcrun_find_tool(sdk_name: &str, tool: &str) -> Result<String> {
+        let tool_output = Command::new("xcrun")
             .arg("--sdk")
             .arg(sdk_name)
             .arg("--find")
-            .arg("clang")
+            .arg(tool)
             .output()
             .await?;
-        if !cc_output.status.success() {
-            anyhow::bail!("xcrun --find clang failed");
+        if !tool_output.status.success() {
+            anyhow::bail!("xcrun --find {} failed", tool);
         }
-        let cc = String::from_utf8(cc_output.stdout)?.trim().to_string();
+        Ok(String::from_utf8(tool_output.stdout)?.trim().to_string())
+    }
 
-        let target = match (platform, arch) {
-            (Platform::Macos, Arch::Arm64) => "arm64-apple-macos",
-            (Platform::Macos, Arch::X86_64) => "x86_64-apple-macos",
-            (Platform::Ios, Arch::Arm64) => "arm64-apple-ios",
-            (Platform::IosSim, Arch::Arm64) => "arm64-apple-ios-simulator",
-            (Platform::IosSim, Arch::X86_64) => "x86_64-apple-ios-simulator",
-            _ => anyhow::bail!(
-                "{} architecture not supported for platform: {:?}",
-                arch_dir,
-                platform
-            ),
-        };
+    pub async fn prepare_toolchain(
+        platform: Platform,
+        arch: Arch,
+        config: &Config,
+    ) -> Result<AutotoolsToolchain> {
+        let platform_dir = platform_dir(platform)?.to_string();
+        let sdk_name = sdk_name(platform)?;
+        let min_ver_flag = min_ver_flag(platform, config)?;
+
+        let arch_dir = arch_dir_name(arch)?.to_string();
+
+        let host = configure_host(arch)?.to_string();
+
+        let sdk_root = xcrun_show_sdk_path(sdk_name).await?;
+        let cc = xcrun_find_tool(sdk_name, "clang").await?;
+        let target = target(platform, arch)?;
 
         let base_cflags = format!(
             "-target {target} -arch {arch_dir} -isysroot {sdk_root} {} {}",
