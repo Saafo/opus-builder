@@ -282,7 +282,9 @@ pub struct HarmonyConfig {
 impl Default for HarmonyConfig {
     fn default() -> Self {
         Self {
-            ndk_path: PathBuf::from("/usr/local/openharmony"),
+            ndk_path: PathBuf::from(
+                "/usr/local/command-line-tools/sdk/HarmonyOS-NEXT-DB3/openharmony",
+            ),
             archs: vec![Arch::ArmeabiV7a, Arch::Arm64V8a, Arch::X86_64],
             lib_type: LibType::Shared,
         }

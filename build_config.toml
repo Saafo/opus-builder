@@ -35,6 +35,11 @@ ndk_path = "/usr/local/NDK-r28c"
 archs = ["arm64-v8a", "armeabi-v7a", "x86_64", "x86"]
 lib_type = "shared"
 
+[platforms.harmony]
+ndk_path = "/usr/local/command-line-tools/sdk/HarmonyOS-NEXT-DB3/openharmony"
+archs = ["arm64-v8a", "armeabi-v7a", "x86_64"]
+lib_type = "shared"
+
 [libraries.libogg]
 version = "v1.3.5"
 

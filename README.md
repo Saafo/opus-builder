@@ -1,6 +1,6 @@
 # opus-builder
 
-A Rust-based multi-platform build tool for compiling Xiph “opus-family” libraries (libogg / libopus / libopusenc / libopusfile) and organizing outputs into a unified directory structure.
+A Rust-based multi-platform build tool for compiling Xiph "opus-family" libraries (libogg / libopus / libopusenc / libopusfile) and organizing outputs into a unified directory structure.
 
 ## Features
 
@@ -8,23 +8,23 @@ A Rust-based multi-platform build tool for compiling Xiph “opus-family” libr
 - Fetches/reuses upstream source repos and checks out pinned versions
 - Apple platforms (macOS / iOS / iOS Simulator): builds universal binaries and packages them into `.xcframework`
 - Android: builds per-ABI outputs (`.so` for shared or `.a` for static) and archives them under `build/lib/android/...`
+- Harmony: builds per-ABI outputs (`.so` for shared or `.a` for static) and archives them under `build/lib/harmony/...`
 
 ## Supported Platforms & Architectures
 
-| Platform | Config Section | Architectures / ABIs | Output Extension | Notes |
-| --- | --- | --- | --- | --- |
-| macOS | `platforms.macos` | `arm64`, `x86_64` | `a` / `dylib` | Can produce universal binaries + xcframework |
-| iOS Device | `platforms.ios` | `arm64` | `a` / `dylib` | Can produce universal binaries + xcframework |
-| iOS Simulator | `platforms.ios-sim` | `arm64`, `x86_64` | `a` / `dylib` | Can produce universal binaries + xcframework |
-| Android | `platforms.android` | `arm64-v8a`, `armeabi-v7a`, `x86_64`, `x86` | `a` / `so` | |
-| Harmony | `platforms.harmony` | Reuses Android config | `a` / `so` | |
+| Platform | Architectures / ABIs | Output Extension | Notes |
+| --- | --- | --- | --- |
+| macOS | `arm64`, `x86_64` | `a` / `dylib` inside `.xcframework/framework` | dylib not supported yet |
+| iOS Device | `arm64` | `a` / `dylib` inside `.xcframework/framework` | dylib not supported yet |
+| iOS Simulator | `arm64`, `x86_64` | `a` / `dylib` inside `.xcframework/framework` | dylib not supported yet |
+| Android | `arm64-v8a`, `armeabi-v7a`, `x86_64`, `x86` | `a` / `so` | |
+| Harmony | `armeabi-v7a`, `arm64-v8a`, `x86_64` | `a` / `so` | |
 
 ## Known Issues
 
 This project is under active development now. Issues below are being worked on:
 
-- Harmony platform is not implemented in code yet (will error at runtime).
-- iOS shared library is not supported yet.
+- Darwin shared library is not supported yet (macOS/iOS).
 
 ## Prerequisites
 
@@ -99,5 +99,6 @@ The default output directory is `build/`:
 - `build/lib/`
   - `build/lib/darwin/<libname>-<version>.xcframework/`: Apple `.xcframework`
   - `build/lib/android/<abi>/<libname>-<version>/`: archived Android outputs
+  - `build/lib/harmony/<abi>/<libname>-<version>/`: archived Harmony outputs
 
 Lower-level intermediate artifacts live under `build/<platform>/<arch>/<repo>/...` and will be removed automatically when `keep_intermediate=false`.
