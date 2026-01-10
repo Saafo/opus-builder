@@ -113,6 +113,7 @@ impl<'a> Builder<'a> {
 
         let mut cflags = toolchain.base_cflags.clone();
         let mut ldflags = toolchain.base_ldflags.clone();
+        let mut pkg_config_path = String::new();
         append_library_build_options(self.config, &self.library, &mut cflags, &mut ldflags);
         append_dependency_search_paths(
             &self.config.paths.build_dir,
@@ -121,6 +122,7 @@ impl<'a> Builder<'a> {
             &self.library,
             &mut cflags,
             &mut ldflags,
+            &mut pkg_config_path,
         )?;
 
         run_autogen(
@@ -139,7 +141,8 @@ impl<'a> Builder<'a> {
         configure_cmd
             .current_dir(&self.repo.local_path)
             .arg(format!("--host={}", toolchain.host))
-            .arg(format!("--prefix={}", prefix.display()));
+            .arg(format!("--prefix={}", prefix.display()))
+            .env("PKG_CONFIG_PATH", &pkg_config_path);
 
         match lib_type {
             LibType::Static => {
@@ -227,6 +230,7 @@ fn append_dependency_search_paths(
     library: &Library,
     cflags: &mut String,
     ldflags: &mut String,
+    pkg_config_path: &mut String,
 ) -> Result<()> {
     let deps: &[Library] = match library {
         Library::Libopusenc => &[Library::Libopus],
@@ -237,6 +241,7 @@ fn append_dependency_search_paths(
         return Ok(());
     }
 
+    let mut pkg_config_paths = Vec::new();
     for dep in deps {
         let dep_prefix = build_dir
             .join(platform_dir)
@@ -253,7 +258,13 @@ fn append_dependency_search_paths(
             )
         })?;
         ldflags.push_str(&format!(" -L{}", lib_dir.display()));
+        pkg_config_paths.push(lib_dir.join("pkgconfig"));
     }
+    *pkg_config_path = pkg_config_paths
+        .iter()
+        .map(|p| p.display().to_string())
+        .collect::<Vec<_>>()
+        .join(":");
 
     Ok(())
 }
