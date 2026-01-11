@@ -174,6 +174,12 @@ impl std::fmt::Display for Platform {
     }
 }
 
+impl Platform {
+    pub fn is_darwin(&self) -> bool {
+        matches!(self, Platform::Macos | Platform::Ios | Platform::IosSim)
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum Arch {
     #[serde(rename = "x86_64")]

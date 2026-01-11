@@ -110,11 +110,7 @@ fn include_source_for_platform(
 
 /// Create an xcframework if any Apple platform was built.
 pub async fn create_xcframework_if_needed(config: &Config) -> Result<()> {
-    let has_apple_platform = config
-        .general
-        .platforms
-        .iter()
-        .any(|p| matches!(p, Platform::Macos | Platform::Ios | Platform::IosSim));
+    let has_apple_platform = config.general.platforms.iter().any(|p| p.is_darwin());
 
     if !has_apple_platform {
         log::info!("No Apple platforms built, skipping xcframework creation");

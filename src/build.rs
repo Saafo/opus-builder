@@ -71,10 +71,7 @@ pub async fn run(options: BuildOptions) -> Result<()> {
                 )?;
             }
 
-            if *platform == Platform::Macos
-                || *platform == Platform::Ios
-                || *platform == Platform::IosSim
-            {
+            if platform.is_darwin() {
                 log::info!("Creating universal binary for {library} for {platform}");
                 crate::platforms::darwin::build::create_universal_binary(
                     &config.paths.build_dir,
