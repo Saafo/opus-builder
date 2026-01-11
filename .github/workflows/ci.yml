@@ -1,0 +1,166 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: Swatinem/rust-cache@v2
+      - name: Build
+        run: cargo build
+
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+      - name: Rustfmt
+        run: cargo fmt --check
+      - name: Clippy
+        run: cargo clippy --all-targets -- -D warnings
+
+  darwin-static:
+    needs: build
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      - uses: Swatinem/rust-cache@v2
+      - name: Install build dependencies
+        run: |
+          brew update
+          brew install autoconf automake libtool pkg-config
+      - name: Install ctoml
+        run: cargo install ctoml
+      - name: Configure build_config.toml
+        run: |
+          ctoml build_config.toml general.platforms '["ios-sim", "ios", "macos"]'
+      - name: Build
+        run: cargo run -- build
+      - name: Check artifacts
+        run: cargo test --test check_build_artifacts
+      - uses: actions/upload-artifact@v6
+        with:
+          name: darwin-static
+          path: build/
+
+  android-shared:
+    needs: build
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      - uses: Swatinem/rust-cache@v2
+      - name: Install build dependencies
+        run: |
+          brew update
+          brew install autoconf automake libtool pkg-config
+      - name: Install ctoml
+        run: cargo install ctoml
+      - name: Configure build_config.toml
+        run: |
+          test -n "$ANDROID_NDK_LATEST_HOME"
+          ctoml build_config.toml general.platforms '["android"]'
+          ctoml build_config.toml platforms.android.ndk_path "$ANDROID_NDK_LATEST_HOME"
+      - name: Build
+        run: cargo run -- build
+      - name: Check artifacts
+        run: cargo test --test check_build_artifacts
+      - uses: actions/upload-artifact@v6
+        with:
+          name: android-shared
+          path: build/
+
+  android-static:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      - uses: Swatinem/rust-cache@v2
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y autoconf automake libtool pkg-config
+      - name: Install ctoml
+        run: cargo install ctoml
+      - name: Configure build_config.toml
+        run: |
+          test -n "$ANDROID_NDK_LATEST_HOME"
+          ctoml build_config.toml general.platforms '["android"]'
+          ctoml build_config.toml platforms.android.lib_type "static"
+          ctoml build_config.toml platforms.android.ndk_path "$ANDROID_NDK_LATEST_HOME"
+      - name: Build
+        run: cargo run -- build
+      - name: Check artifacts
+        run: cargo test --test check_build_artifacts
+      - uses: actions/upload-artifact@v6
+        with:
+          name: android-static
+          path: build/ 
+
+  harmony-shared:
+    if: false # https://github.com/harmonyos-dev/setup-harmonyos-sdk/issues/24
+    needs: build
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+      - uses: harmonyos-dev/setup-harmonyos-sdk@0.2.0
+      - name: Install Harmony native component
+        run: |
+          set -x
+          ls -al $HOS_SDK_HOME
+          $HOS_SDK_HOME/sdkmanager/bin/sdkmgr list
+          $HOS_SDK_HOME/sdkmanager/bin/sdkmgr install OpenHarmony/native --accept-license --sdk-directory="$HOS_SDK_HOME"
+          $HOS_SDK_HOME/sdkmanager/bin/sdkmgr list
+          ls -al $HOS_SDK_HOME
+      - name: Install build dependencies
+        run: |
+          brew update
+          brew install autoconf automake libtool pkg-config
+      # - name: Download and install Harmony SDK
+      #   run: |
+      #     RELEASE_JSON=$(curl -s -H "Accept: application/vnd.github.v3+json" https://api.github.com/repos/harmonyos-dev/hos-sdk/releases/latest)
+      #     ASSET_URL=$(echo "$RELEASE_JSON" | jq -r '.assets[] | select(.name | test("commandline-tools-mac-.*\\.zip")) | .browser_download_url' | head -n 1)
+      #     test -n "$ASSET_URL"
+      #     curl -LJO "$ASSET_URL"
+      #     ZIP_NAME=$(basename "$ASSET_URL")
+      #     unzip -q "$ZIP_NAME"
+      #     export JAVA_TOOL_OPTIONS="$JAVA_TOOL_OPTIONS -Duser.country=CN"
+      #     export HOS_SDK_HOME="$PWD/hwsdk"
+      #     mkdir -p "$HOS_SDK_HOME"
+      #     chmod +x command-line-tools/sdkmanager/bin/sdkmgr
+      #     command-line-tools/sdkmanager/bin/sdkmgr install toolchains:9 OpenHarmony/toolchains:9 --accept-license
+      - name: Install ctoml
+        run: cargo install ctoml
+      - name: Configure build_config.toml
+        run: |
+          OHOS_NDK_PATH="$HOS_SDK_HOME"
+          test -d "$OHOS_NDK_PATH/native/llvm/bin"
+          test -d "$OHOS_NDK_PATH/native/sysroot"
+          ctoml build_config.toml general.platforms '["harmony"]'
+          ctoml build_config.toml platforms.harmony.ndk_path "$OHOS_NDK_PATH"
+      - name: Build
+        run: cargo run -- build
+      - name: Check artifacts
+        run: cargo test --test check_build_artifacts
+      - uses: actions/upload-artifact@v6
+        with:
+          name: harmony-shared
+          path: build/

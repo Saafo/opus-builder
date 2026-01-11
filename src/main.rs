@@ -2,15 +2,7 @@ use std::env;
 
 use clap::{CommandFactory, Parser};
 
-mod build;
-mod builder;
-mod clean;
-mod cli;
-mod config;
-mod platforms;
-mod post_build;
-mod repo;
-mod utils;
+use opus_builder::{build, clean, cli};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {

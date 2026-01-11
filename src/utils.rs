@@ -2,7 +2,7 @@ use anyhow::Result;
 use tokio::process::Command;
 
 /// Extension methods for `tokio::process::Command` to support a verbose mode.
-pub trait CommandVerboseExt {
+pub(crate) trait CommandVerboseExt {
     /// Executes the command and controls output based on `verbose`.
     ///
     /// - `verbose = true`: stream output directly
