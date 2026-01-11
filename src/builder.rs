@@ -74,28 +74,6 @@ impl<'a> Builder<'a> {
             .get_lib_type_for_platform(&self.platform);
         self.run_autotools(&toolchain, lib_type).await?;
 
-        match self.platform {
-            Platform::Android => {
-                android::build::move_android_package(
-                    &self.config.paths.build_dir,
-                    &self.library,
-                    self.config.get_library_version(&self.library)?,
-                    self.arch,
-                    lib_type,
-                )?;
-            }
-            Platform::Harmony => {
-                harmony::build::move_harmony_package(
-                    &self.config.paths.build_dir,
-                    &self.library,
-                    self.config.get_library_version(&self.library)?,
-                    self.arch,
-                    lib_type,
-                )?;
-            }
-            _ => {}
-        }
-
         Ok(())
     }
 

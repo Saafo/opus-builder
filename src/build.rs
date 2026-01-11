@@ -1,12 +1,12 @@
 use crate::builder;
 use crate::config;
-use crate::config::Platform;
+use crate::config::{Arch, LibType, Library, Platform};
 use crate::post_build;
 use crate::repo;
 use anyhow::Result;
 use std::collections::HashMap;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Copy)]
 pub struct BuildOptions {
@@ -15,7 +15,6 @@ pub struct BuildOptions {
 }
 
 pub async fn run(options: BuildOptions) -> Result<()> {
-    let _ = options.force;
     let config_path = PathBuf::from("build_config.toml");
     let mut config = config::load_or_create_config(&config_path)?;
 
@@ -36,10 +35,20 @@ pub async fn run(options: BuildOptions) -> Result<()> {
         let lib_type_for_platform = config.platforms.get_lib_type_for_platform(platform);
 
         for library in &config.general.libraries {
+            let version = config.get_library_version(library)?;
             for arch in archs_for_platform {
-                let repo_name = library.repo_name();
-                if let Some(repo) = repo_map.get(repo_name) {
-                    log::info!("Building {} for {} ({})", library, platform, arch);
+                let can_reuse_cached_build = !options.force
+                    && build_artifact_ready(
+                        &config.paths.build_dir,
+                        *platform,
+                        *arch,
+                        library,
+                        lib_type_for_platform,
+                    )?;
+                if can_reuse_cached_build {
+                    log::info!("Reusing cached {library} for {platform} ({arch})");
+                } else if let Some(repo) = repo_map.get(library.repo_name()) {
+                    log::info!("Building {library} for {platform} ({arch})");
                     let b = builder::Builder::new(
                         *platform,
                         *arch,
@@ -49,15 +58,24 @@ pub async fn run(options: BuildOptions) -> Result<()> {
                         options.verbose,
                     );
                     b.build().await?;
-                    log::info!("Built {} for {} ({}) succeeded!", library, platform, arch);
+                    log::info!("Built {library} for {platform} ({arch}) succeeded!");
                 }
+
+                package_artifact_if_needed(
+                    &config.paths.build_dir,
+                    *platform,
+                    library,
+                    version,
+                    *arch,
+                    lib_type_for_platform,
+                )?;
             }
 
             if *platform == Platform::Macos
                 || *platform == Platform::Ios
                 || *platform == Platform::IosSim
             {
-                log::info!("Creating universal binary for {} for {}", library, platform);
+                log::info!("Creating universal binary for {library} for {platform}");
                 crate::platforms::darwin::build::create_universal_binary(
                     &config.paths.build_dir,
                     *platform,
@@ -87,4 +105,63 @@ pub async fn run(options: BuildOptions) -> Result<()> {
     println!("\n🎉 Build completed successfully!\n");
 
     Ok(())
+}
+
+fn build_artifact_ready(
+    build_dir: &Path,
+    platform: Platform,
+    arch: Arch,
+    library: &Library,
+    lib_type: LibType,
+) -> Result<bool> {
+    Ok(expected_library_path(build_dir, platform, arch, library, lib_type)?.exists())
+}
+
+fn expected_library_path(
+    build_dir: &Path,
+    platform: Platform,
+    arch: Arch,
+    library: &Library,
+    lib_type: LibType,
+) -> Result<PathBuf> {
+    let platform_dir = platform.to_string().to_lowercase();
+    let arch_dir = match platform {
+        Platform::Macos | Platform::Ios | Platform::IosSim => {
+            crate::platforms::darwin::build::arch_dir_name(arch)?
+        }
+        Platform::Android => crate::platforms::android::build::arch_dir_name(arch)?,
+        Platform::Harmony => crate::platforms::harmony::build::arch_dir_name(arch)?,
+    };
+
+    let ext = match platform {
+        Platform::Macos | Platform::Ios | Platform::IosSim => lib_type.darwin_ext(),
+        Platform::Android | Platform::Harmony => lib_type.linux_ext(),
+    };
+    let file_name = format!("{}.{}", library.name_with_lib_prefix(), ext);
+
+    Ok(build_dir
+        .join(platform_dir)
+        .join(arch_dir)
+        .join(library.repo_name())
+        .join("lib")
+        .join(file_name))
+}
+
+fn package_artifact_if_needed(
+    build_dir: &Path,
+    platform: Platform,
+    library: &Library,
+    version: &str,
+    arch: Arch,
+    lib_type: LibType,
+) -> Result<()> {
+    match platform {
+        Platform::Android => crate::platforms::android::build::move_android_package(
+            build_dir, library, version, arch, lib_type,
+        ),
+        Platform::Harmony => crate::platforms::harmony::build::move_harmony_package(
+            build_dir, library, version, arch, lib_type,
+        ),
+        Platform::Macos | Platform::Ios | Platform::IosSim => Ok(()),
+    }
 }

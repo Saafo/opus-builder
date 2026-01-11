@@ -19,16 +19,20 @@ pub enum Commands {
 
 #[derive(Debug, Parser)]
 pub struct BuildArgs {
-    #[arg(short = 'f', long = "force")]
+    #[arg(
+        short = 'f',
+        long = "force",
+        help = "Force rebuild, ignoring build/{platform} cache"
+    )]
     pub force: bool,
 }
 
 #[derive(Debug, Parser)]
 pub struct CleanArgs {
-    #[arg(short = 'b', long = "build")]
+    #[arg(short = 'b', long = "build", help = "Remove build directory")]
     pub build: bool,
 
-    #[arg(short = 'r', long = "repo")]
+    #[arg(short = 'r', long = "repo", help = "Git reset repos")]
     pub repo: bool,
 }
 
