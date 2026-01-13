@@ -1,0 +1,64 @@
+name: CD
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  ci:
+    uses: ./.github/workflows/ci.yml
+    secrets: inherit
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: ci
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/download-artifact@v7
+        with:
+          path: artifacts
+      - name: Package artifacts
+        run: |
+          set -euo pipefail
+          cd artifacts
+          for name in darwin-static android-shared android-static harmony-shared harmony-static; do
+            test -d "$name"
+            zip -r "../${name}.zip" "$name"
+          done
+      - name: Build release body
+        run: |
+          python - <<'PY'
+          import tomllib
+          from pathlib import Path
+
+          cfg = tomllib.loads(Path("build_config.toml").read_text("utf-8"))
+          libs = cfg.get("libraries", {})
+          wanted = ["libopus", "libogg", "libopusenc", "libopusfile"]
+          lines = []
+          for name in wanted:
+            ver = libs.get(name, {}).get("version", "unknown")
+            lines.append(f"{name}: {ver}")
+
+          body = "\n".join(lines) + "\n"
+          Path("release_body.md").write_text(body, encoding="utf-8")
+          print(body)
+          PY
+      - name: Create or update GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" --title "$TAG" --notes-file release_body.md --draft --prerelease=false
+            gh release upload "$TAG" ./*.zip --clobber
+          else
+            gh release create "$TAG" ./*.zip --title "$TAG" --notes-file release_body.md --draft --prerelease=false
+          fi
