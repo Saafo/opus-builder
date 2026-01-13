@@ -34,10 +34,14 @@ jobs:
       - name: Clippy
         run: cargo clippy --all-targets -- -D warnings
 
-  darwin-static:
+  darwin:
+    name: darwin-${{ matrix.lib_type }}
     needs: build
     runs-on: macos-latest
     timeout-minutes: 30
+    strategy:
+      matrix:
+        lib_type: [static]
     steps:
       - uses: actions/checkout@v6
       - uses: Swatinem/rust-cache@v2
@@ -50,46 +54,26 @@ jobs:
       - name: Configure build_config.toml
         run: |
           ctoml build_config.toml general.platforms '["ios-sim", "ios", "macos"]'
+          ctoml build_config.toml platforms.macos.lib_type "${{ matrix.lib_type }}"
+          ctoml build_config.toml platforms.ios.lib_type "${{ matrix.lib_type }}"
+          ctoml build_config.toml platforms.ios-sim.lib_type "${{ matrix.lib_type }}"
       - name: Build
         run: cargo run -- build
       - name: Check artifacts
         run: cargo test --test check_build_artifacts
       - uses: actions/upload-artifact@v6
         with:
-          name: darwin-static
+          name: darwin-${{ matrix.lib_type }}
           path: build/
 
-  android-shared:
-    needs: build
-    runs-on: macos-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v6
-      - uses: Swatinem/rust-cache@v2
-      - name: Install build dependencies
-        run: |
-          brew update
-          brew install autoconf automake libtool pkg-config
-      - name: Install ctoml
-        run: cargo install ctoml
-      - name: Configure build_config.toml
-        run: |
-          test -n "$ANDROID_NDK_LATEST_HOME"
-          ctoml build_config.toml general.platforms '["android"]'
-          ctoml build_config.toml platforms.android.ndk_path "$ANDROID_NDK_LATEST_HOME"
-      - name: Build
-        run: cargo run -- build
-      - name: Check artifacts
-        run: cargo test --test check_build_artifacts
-      - uses: actions/upload-artifact@v6
-        with:
-          name: android-shared
-          path: build/
-
-  android-static:
+  android:
+    name: android-${{ matrix.lib_type }}
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    strategy:
+      matrix:
+        lib_type: [shared, static]
     steps:
       - uses: actions/checkout@v6
       - uses: Swatinem/rust-cache@v2
@@ -103,21 +87,24 @@ jobs:
         run: |
           test -n "$ANDROID_NDK_LATEST_HOME"
           ctoml build_config.toml general.platforms '["android"]'
-          ctoml build_config.toml platforms.android.lib_type "static"
           ctoml build_config.toml platforms.android.ndk_path "$ANDROID_NDK_LATEST_HOME"
+          ctoml build_config.toml platforms.android.lib_type "${{ matrix.lib_type }}"
       - name: Build
         run: cargo run -- build
       - name: Check artifacts
         run: cargo test --test check_build_artifacts
       - uses: actions/upload-artifact@v6
         with:
-          name: android-static
+          name: android-${{ matrix.lib_type }}
           path: build/
-
-  harmony-shared:
+  harmony:
+    name: harmony-${{ matrix.lib_type }}
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    strategy:
+      matrix:
+        lib_type: [shared, static]
     steps:
       - uses: actions/checkout@v6
       - uses: Swatinem/rust-cache@v2
@@ -150,57 +137,12 @@ jobs:
           test -d "$OHOS_NDK_PATH/native/sysroot"
           ctoml build_config.toml general.platforms '["harmony"]'
           ctoml build_config.toml platforms.harmony.ndk_path "$OHOS_NDK_PATH"
+          ctoml build_config.toml platforms.harmony.lib_type "${{ matrix.lib_type }}"
       - name: Build
         run: cargo run -- build
       - name: Check artifacts
         run: cargo test --test check_build_artifacts
       - uses: actions/upload-artifact@v6
         with:
-          name: harmony-shared
-          path: build/
-
-  harmony-static:
-    needs: build
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v6
-      - uses: Swatinem/rust-cache@v2
-      - name: Download Harmony SDK
-        run: |
-          set -x
-          SDK_ROOT=$HOME/harmonyos-sdk
-          mkdir -p $SDK_ROOT
-          cd $SDK_ROOT
-          FILE_NAME="commandline-tools-linux-2.0.0.2.zip"
-          wget https://github.com/harmonyos-dev/hos-sdk/releases/download/v2.0.2/$FILE_NAME
-          unzip -q $FILE_NAME
-          echo HOS_SDK_HOME="$SDK_ROOT/command-line-tools" >> $GITHUB_ENV
-      # - uses: harmonyos-dev/setup-harmonyos-sdk@0.2.0
-      # Cannot use because of easily failure: https://github.com/harmonyos-dev/setup-harmonyos-sdk/issues/24
-      - name: Install Harmony native component
-        run: |
-          set -x
-          $HOS_SDK_HOME/sdkmanager/bin/sdkmgr install OpenHarmony/native --accept-license --sdk-directory="$HOS_SDK_HOME"
-      - name: Install build dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y autoconf automake libtool pkg-config
-      - name: Install ctoml
-        run: cargo install ctoml
-      - name: Configure build_config.toml
-        run: |
-          OHOS_NDK_PATH="$HOS_SDK_HOME/openharmony/9"
-          test -d "$OHOS_NDK_PATH/native/llvm/bin"
-          test -d "$OHOS_NDK_PATH/native/sysroot"
-          ctoml build_config.toml general.platforms '["harmony"]'
-          ctoml build_config.toml platforms.harmony.ndk_path "$OHOS_NDK_PATH"
-          ctoml build_config.toml platforms.harmony.lib_type "static"
-      - name: Build
-        run: cargo run -- build
-      - name: Check artifacts
-        run: cargo test --test check_build_artifacts
-      - uses: actions/upload-artifact@v6
-        with:
-          name: harmony-static
+          name: harmony-${{ matrix.lib_type }}
           path: build/
