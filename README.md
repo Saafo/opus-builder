@@ -1,5 +1,11 @@
 # opus-builder
 
+[![CI](https://github.com/Saafo/opus-builder/actions/workflows/ci.yml/badge.svg)](https://github.com/Saafo/opus-builder/actions/workflows/ci.yml)
+[![CD](https://github.com/Saafo/opus-builder/actions/workflows/cd.yml/badge.svg)](https://github.com/Saafo/opus-builder/actions/workflows/cd.yml)
+[![GitHub License](https://img.shields.io/github/license/Saafo/opus-builder)](https://github.com/Saafo/opus-builder?tab=MIT-1-ov-file)<br>
+[![Host Platforms](https://img.shields.io/badge/Host%20Platforms-macOS%20%7C%20Linux-green)](https://github.com/Saafo/opus-builder)<br>
+[![Target Platforms](https://img.shields.io/badge/Target%20Platforms-iOS%20%7C%20macOS%20%7C%20Android%20%7C%20Harmony-blue)](https://github.com/Saafo/opus-builder)<br>
+
 A Rust-based multi-platform build tool for compiling Xiph "opus-family" libraries (libogg / libopus / libopusenc / libopusfile) and organizing outputs into a unified directory structure.
 
 ## Features
@@ -59,6 +65,20 @@ Clean build artifacts only:
 ```bash
 cargo run -- clean -b
 ```
+
+## Build on GitHub Actions
+
+If you don't want to build locally, you can run everything on GitHub Actions:
+
+1. Fork this repository.
+2. Edit `build_config.toml` in your fork to select (see [Configuration](#configuration))
+  3. Push commits to your fork:
+   - pushing to the fork's `main` branch triggers CI automatically, or
+   - go to GitHub Actions → `CI` → `Run workflow` to trigger it manually.
+4. Download build outputs from the workflow run page (Artifacts section).
+
+> Notes:
+> - To create a draft GitHub Release with the build artifacts attached, push a git tag that matches `v*` (e.g. `v0.1.0`) to your fork. The `CD` workflow will run and create/update a draft release whose body lists the library versions read from `build_config.toml`.
 
 ## Configuration
 
