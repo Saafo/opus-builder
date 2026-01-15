@@ -28,8 +28,10 @@ jobs:
         run: |
           set -euo pipefail
           cd artifacts
-          for name in darwin-static android-shared android-static harmony-shared harmony-static; do
-            test -d "$name"
+          shopt -s nullglob
+          for dir in */; do
+            test -d "$dir"
+            name="${dir%/}"
             zip -r "../${name}.zip" "$name"
           done
       - name: Build release body
