@@ -94,6 +94,8 @@ Build behavior is controlled by `build_config.toml`. Common fields:
 - `[libraries.<name>]`
   - `version`: git tag/commit to check out
   - `configure_flags` / `cflags` / `ldflags`: per-library extra flags
+- `[libraries.<name>.targets.<platform>.<arch>]`
+  - `configure_flags` / `cflags` / `ldflags`: additional flags for one library on a specific platform and architecture. These target-specific flags are appended after the global and per-library flags; they do not replace them.
 
 Example: build iOS static libraries (device + simulator) only:
 

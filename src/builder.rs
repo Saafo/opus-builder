@@ -1,4 +1,4 @@
-use crate::config::{Arch, Config, LibType, Library, Platform};
+use crate::config::{Arch, BuildOptions, Config, LibType, Library, Platform};
 use crate::platforms::{android, darwin, harmony};
 use crate::repo::Repo;
 use crate::utils::CommandVerboseExt;
@@ -92,7 +92,14 @@ impl<'a> Builder<'a> {
         let mut cflags = toolchain.base_cflags.clone();
         let mut ldflags = toolchain.base_ldflags.clone();
         let mut pkg_config_path = String::new();
-        append_library_build_options(self.config, &self.library, &mut cflags, &mut ldflags);
+        append_library_build_options(
+            self.config,
+            &self.library,
+            &self.platform,
+            &self.arch,
+            &mut cflags,
+            &mut ldflags,
+        );
         append_dependency_search_paths(
             &self.config.paths.build_dir,
             &toolchain.platform_dir,
@@ -131,7 +138,13 @@ impl<'a> Builder<'a> {
             }
         }
 
-        append_configure_flags(self.config, &self.library, &mut configure_cmd);
+        append_configure_flags(
+            self.config,
+            &self.library,
+            &self.platform,
+            &self.arch,
+            &mut configure_cmd,
+        );
         apply_common_env(&mut configure_cmd, toolchain, &cflags, &ldflags);
 
         configure_cmd
@@ -182,22 +195,35 @@ impl<'a> Builder<'a> {
 fn append_library_build_options(
     config: &Config,
     library: &Library,
+    platform: &Platform,
+    arch: &Arch,
     cflags: &mut String,
     ldflags: &mut String,
 ) {
     if let Some(lib_opts) = config.libraries.get(library) {
-        if let Some(c) = &lib_opts.cflags
-            && !c.is_empty()
+        append_build_options(&lib_opts.build_options, cflags, ldflags);
+        if let Some(target_opts) = lib_opts
+            .targets
+            .get(platform)
+            .and_then(|arch_options| arch_options.get(arch))
         {
-            cflags.push(' ');
-            cflags.push_str(c);
+            append_build_options(target_opts, cflags, ldflags);
         }
-        if let Some(l) = &lib_opts.ldflags
-            && !l.is_empty()
-        {
-            ldflags.push(' ');
-            ldflags.push_str(l);
-        }
+    }
+}
+
+fn append_build_options(options: &BuildOptions, cflags: &mut String, ldflags: &mut String) {
+    if let Some(c) = &options.cflags
+        && !c.is_empty()
+    {
+        cflags.push(' ');
+        cflags.push_str(c);
+    }
+    if let Some(l) = &options.ldflags
+        && !l.is_empty()
+    {
+        ldflags.push(' ');
+        ldflags.push_str(l);
     }
 }
 
@@ -247,13 +273,30 @@ fn append_dependency_search_paths(
     Ok(())
 }
 
-fn append_configure_flags(config: &Config, library: &Library, cmd: &mut Command) {
+fn append_configure_flags(
+    config: &Config,
+    library: &Library,
+    platform: &Platform,
+    arch: &Arch,
+    cmd: &mut Command,
+) {
     for flag in &config.build.configure_flags {
         cmd.arg(flag);
     }
-    if let Some(lib_opts) = config.libraries.get(library)
-        && let Some(flags) = &lib_opts.configure_flags
-    {
+    if let Some(lib_opts) = config.libraries.get(library) {
+        append_configure_build_options(&lib_opts.build_options, cmd);
+        if let Some(target_opts) = lib_opts
+            .targets
+            .get(platform)
+            .and_then(|arch_options| arch_options.get(arch))
+        {
+            append_configure_build_options(target_opts, cmd);
+        }
+    }
+}
+
+fn append_configure_build_options(options: &BuildOptions, cmd: &mut Command) {
+    if let Some(flags) = &options.configure_flags {
         for flag in flags {
             cmd.arg(flag);
         }

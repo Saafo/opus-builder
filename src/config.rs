@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::PathBuf;
 
@@ -11,7 +11,7 @@ pub struct Config {
     pub paths: PathConfig,
     pub build: Build,
     pub platforms: PlatformConfig,
-    pub libraries: HashMap<Library, LibraryBuildOptions>,
+    pub libraries: BTreeMap<Library, LibraryConfig>,
 }
 
 impl Default for Config {
@@ -36,49 +36,51 @@ impl Default for Config {
             harmony: HarmonyConfig::default(),
         };
 
-        let mut libraries = HashMap::new();
+        let mut libraries = BTreeMap::new();
         libraries.insert(
             Library::Libogg,
-            LibraryBuildOptions {
+            LibraryConfig {
                 version: Some("v1.3.5".to_string()),
-                cflags: None,
-                ldflags: None,
-                configure_flags: None,
+                build_options: BuildOptions::default(),
+                targets: TargetBuildOptions::default(),
             },
         );
         libraries.insert(
             Library::Libopus,
-            LibraryBuildOptions {
+            LibraryConfig {
                 version: Some("v1.5.2".to_string()),
-                cflags: None,
-                ldflags: None,
-                configure_flags: Some(vec![
-                    "--enable-float-approx".to_string(),
-                    "--disable-extra-programs".to_string(),
-                    "--disable-doc".to_string(),
-                ]),
+                build_options: BuildOptions {
+                    configure_flags: Some(vec![
+                        "--enable-float-approx".to_string(),
+                        "--disable-extra-programs".to_string(),
+                        "--disable-doc".to_string(),
+                    ]),
+                    ..Default::default()
+                },
+                targets: TargetBuildOptions::default(),
             },
         );
         libraries.insert(
             Library::Libopusenc,
-            LibraryBuildOptions {
+            LibraryConfig {
                 version: Some("v0.2.1".to_string()),
-                cflags: None,
-                ldflags: None,
-                configure_flags: None,
+                build_options: BuildOptions::default(),
+                targets: TargetBuildOptions::default(),
             },
         );
         libraries.insert(
             Library::Libopusfile,
-            LibraryBuildOptions {
+            LibraryConfig {
                 version: Some("v0.12".to_string()),
-                cflags: None,
-                ldflags: None,
-                configure_flags: Some(vec![
-                    "--disable-http".to_string(),
-                    "--disable-examples".to_string(),
-                    "--disable-doc".to_string(),
-                ]),
+                build_options: BuildOptions {
+                    configure_flags: Some(vec![
+                        "--disable-http".to_string(),
+                        "--disable-examples".to_string(),
+                        "--disable-doc".to_string(),
+                    ]),
+                    ..Default::default()
+                },
+                targets: TargetBuildOptions::default(),
             },
         );
 
@@ -365,8 +367,25 @@ impl Default for Build {
 
 #[derive(Serialize, Deserialize, Debug, Default)]
 #[serde(default)]
-pub struct LibraryBuildOptions {
+pub struct LibraryConfig {
     pub version: Option<String>,
+
+    #[serde(flatten)]
+    pub build_options: BuildOptions,
+
+    // Android 32-bit uses 32-bit stdio file offsets below API 24. libopusfile
+    // enables _FILE_OFFSET_BITS=64 by default, which makes its fseeko/ftello calls
+    // use the wrong ABI and causes op_test_file() to fail with OP_EINVAL while
+    // memory decoding still works. Keep large-file disabled and force 32-bit offsets.
+    #[serde(skip_serializing_if = "TargetBuildOptions::is_empty")]
+    pub targets: TargetBuildOptions,
+}
+
+pub type TargetBuildOptions = BTreeMap<Platform, BTreeMap<Arch, BuildOptions>>;
+
+#[derive(Serialize, Deserialize, Debug, Default)]
+#[serde(default)]
+pub struct BuildOptions {
     pub cflags: Option<String>,
     pub ldflags: Option<String>,
     pub configure_flags: Option<Vec<String>>,

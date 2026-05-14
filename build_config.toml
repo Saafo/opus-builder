@@ -53,3 +53,7 @@ version = "v0.2.1"
 [libraries.libopusfile]
 version = "v0.12"
 configure_flags = ["--disable-http", "--disable-examples", "--disable-doc"]
+
+[libraries.libopusfile.targets.android."armeabi-v7a"]
+cflags = "-D_FILE_OFFSET_BITS=32"
+configure_flags = ["--disable-largefile"]
