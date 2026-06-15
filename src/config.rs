@@ -358,8 +358,8 @@ impl Default for Build {
     fn default() -> Self {
         Self {
             make_concurrent_jobs: 8,
-            cflags: "-O3 -g -DNDEBUG -ffast-math".to_string(),
-            ldflags: "-flto -fPIE".to_string(),
+            cflags: "-Os -g -DNDEBUG".to_string(),
+            ldflags: "".to_string(),
             configure_flags: vec!["--with-pic".to_string()],
         }
     }

@@ -10,8 +10,8 @@ repo_path = ["repos"]
 
 [build]
 make_concurrent_jobs = 8
-cflags = "-O3 -g -DNDEBUG -ffast-math"
-ldflags = "-flto -fPIE"
+cflags = "-Os -g -DNDEBUG"
+ldflags = ""
 configure_flags = ["--with-pic"]
 
 [platforms.macos]
