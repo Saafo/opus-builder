@@ -184,23 +184,32 @@ pub mod build {
 
         let output_path = universal_dir.join("lib").join(&file_name);
 
-        log::info!(
-            "Creating universal binary for {} at {}",
-            lib_name,
-            output_path.display()
-        );
+        if archs.len() < 2 {
+            log::info!(
+                "Copying single-architecture binary for {} to {}",
+                lib_name,
+                output_path.display()
+            );
+            fs::copy(&lib_files[0], &output_path)?;
+        } else {
+            log::info!(
+                "Creating universal binary for {} at {}",
+                lib_name,
+                output_path.display()
+            );
 
-        let mut cmd = Command::new("lipo");
-        cmd.arg("-create");
-        for lib_file in &lib_files {
-            cmd.arg(lib_file);
-        }
-        cmd.arg("-output");
-        cmd.arg(&output_path);
+            let mut cmd = Command::new("lipo");
+            cmd.arg("-create");
+            for lib_file in &lib_files {
+                cmd.arg(lib_file);
+            }
+            cmd.arg("-output");
+            cmd.arg(&output_path);
 
-        let status = cmd.status().await?;
-        if !status.success() {
-            anyhow::bail!("lipo failed for {}", lib_name);
+            let status = cmd.status().await?;
+            if !status.success() {
+                anyhow::bail!("lipo failed for {}", lib_name);
+            }
         }
 
         if let Some(first_arch) = archs.first().copied()
